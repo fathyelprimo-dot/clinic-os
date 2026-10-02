@@ -151,8 +151,8 @@
   <p>بيانات بسيطة تساعدنا نرتب زيارتك.</p>
   <form id="booking-form" class="booking-form">
     <div class="selected-summary"><span id="selected-slot"></span><button type="button" data-action="change-slot">تغيير الموعد</button></div>
-    <label>اسم المريض<input name="name" required minlength="3" maxlength="80" placeholder="الاسم بالكامل" autocomplete="name"></label>
-    <label>رقم الموبايل<input name="phone" required inputmode="tel" dir="ltr" maxlength="14" placeholder="01xxxxxxxxx" autocomplete="tel"></label>
+    <label><span>اسم المريض<span class="required-mark" aria-hidden="true">*</span></span><input name="name" required minlength="3" maxlength="80" placeholder="الاسم بالكامل" autocomplete="name"></label>
+    <label><span>رقم الموبايل<span class="required-mark" aria-hidden="true">*</span></span><input name="phone" required inputmode="tel" dir="ltr" maxlength="14" placeholder="01xxxxxxxxx" autocomplete="tel"></label>
     <fieldset><legend>نوع الزيارة</legend><div class="radio-options"><label><input type="radio" name="kind" value="كشف عادي" checked>كشف عادي</label><label><input type="radio" name="kind" value="متابعة">متابعة</label></div></fieldset>
     <fieldset><legend>طريقة الدفع</legend><div class="radio-options"><label><input type="radio" name="payment" value="cash" checked>كاش في العيادة</label><label><input type="radio" name="payment" value="instapay">InstaPay</label></div></fieldset>
     <p id="payment-note" class="notice" hidden></p>
