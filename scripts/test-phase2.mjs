@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
 const dir=new URL('../dist/',import.meta.url);
-const ctx=vm.createContext({Intl,Date,console});vm.runInContext(fs.readFileSync(new URL('domain.js',dir),'utf8'),ctx);const D=ctx.ClinicDomain;
+const ctx=vm.createContext({Intl,Date,console,URL});vm.runInContext(fs.readFileSync(new URL('domain.js',dir),'utf8'),ctx);const D=ctx.ClinicDomain;
 let count=0;const test=(name,fn)=>{fn();count++;console.log('PASS '+name);};
 const now=Date.parse('2026-09-30T15:00:00Z');const b=(id,mins,priority=0,duration=20)=>({id,service_id:'s',status:'waiting',triage:'approved',scheduled_at:new Date(now+mins*60000).toISOString(),priority,duration_minutes:duration,travel_minutes:15});
 const hours={opens:'18:00',closes:'19:00'},service=D.serviceDefaults[0],day='2026-09-30';
@@ -57,4 +57,24 @@ let releaseRefresh;
 apiCtx.fetch=async url=>url.includes('grant_type=refresh_token')?await new Promise(resolve=>releaseRefresh=resolve):{ok:true,json:async()=>null};
 const inflight=api.refresh();await api.logout();releaseRefresh({ok:true,json:async()=>({access_token:'late-token',refresh_token:'refresh',expires_in:120})});await inflight;
 test('Delayed token refresh cannot resurrect a logged-out session',()=>assert.equal(api.session,null));
+
+const ownerPage=fs.readFileSync(new URL('owner.html',dir),'utf8');
+const ownerClient=fs.readFileSync(new URL('owner.js',dir),'utf8');
+const ownerCss=fs.readFileSync(new URL('owner.css',dir),'utf8');
+test('Smart ETA formats minutes, hours, days, and zero safely',()=>{assert.equal(D.formatDuration(0),'الآن');assert.match(D.formatDuration(61),/ساعة/);assert.match(D.formatDuration(1505),/يوم/);assert.match(D.formatDuration(1505),/ساعة/);assert.match(D.formatDuration(1505),/دقيقة/);assert.equal(D.formatDuration(null),'—');});
+test('Google Maps links are accepted only from supported HTTPS Maps domains',()=>{assert.equal(D.isMapsLink('https://maps.app.goo.gl/example'),true);assert.equal(D.isMapsLink('https://www.google.com/maps/place/Clinic'),true);assert.equal(D.isMapsLink('https://example.com/maps'),false);assert.ok(D.mapsUrl({address:'https://maps.app.goo.gl/example'}).startsWith('https://maps.app.goo.gl/'));});
+test('Patient tracking uses verified phone identity without appointment codes',()=>{const track=html.match(/<dialog id="track-dialog"[\s\S]*?<\/dialog>/)?.[0]||'';assert.ok(track);assert.doesNotMatch(track,/name="(?:id|phone)"/);assert.doesNotMatch(stage2,/نسخ رقم الحجز|booking-id/);assert.ok(stage2.includes("await api.verifyOTP"));assert.ok(stage2.includes("await loadBookingHistory(true)"));});
+test('Doctor photo upload is scoped to clinic-media with image type and size limits',()=>{assert.ok(apiSource.includes('/storage/v1/object/clinic-media/'));assert.ok(apiSource.includes('5*1024*1024'));assert.ok(apiSource.includes("'image/jpeg','image/png','image/webp'"));});
+test('Doctor invitation callback restores a memory-only session and opens the doctor workspace',()=>{assert.ok(apiSource.includes('consumeAuthRedirect'));assert.ok(stage2.includes('api.consumeAuthRedirect()'));assert.ok(stage2.includes("if(staff())showView('admin')"));assert.doesNotMatch(apiSource,/localStorage|sessionStorage|indexedDB/);});
+test('Owner dashboard assets are referenced and present in the distribution',()=>{for(const m of ownerPage.matchAll(/(?:src|href)="([^"\s]+\.(?:js|css))"/g))assert.ok(fs.existsSync(new URL(m[1].replace(/^\//,''),dir)),m[1]);assert.ok(ownerCss.includes('.steps-grid'));});
+test('Owner controls use the signed-in admin Edge Function, never a service-role key',()=>{assert.ok(ownerClient.includes('/functions/v1/clinic-platform-admin'));assert.ok(ownerClient.includes("Authorization:'Bearer '+session.access_token"));assert.doesNotMatch(ownerClient,/service_role|sb_secret_|localStorage|sessionStorage|indexedDB/);for(const action of ['create-tenant','update-clinic','set-clinic-active','update-subscription','list-change-requests','update-change-request'])assert.ok(ownerClient.includes(action),action);});
+test('Owner manually enters a clinic slug and receives patient and doctor links',()=>{assert.match(ownerPage,/name="slug"/);assert.match(ownerPage,/pattern="\[a-z0-9-\]\{3,80\}"/);assert.ok(ownerClient.includes("'/clinic/index.html?clinic='"));assert.ok(ownerClient.includes("&portal=doctor"));});
+test('Doctor customization exposes tagline, about, templates, Google Maps, photo upload and WhatsApp support',()=>{for(const word of ['tagline','about','template','Google Maps','photo_file'])assert.ok(stage2.includes(word),word);assert.ok(stage2.includes('wa.me/201551007018'));});
+
+
+const ownerFunction=fs.readFileSync(new URL('../supabase/functions/clinic-platform-admin/index.ts',import.meta.url),'utf8');
+const syncScript=fs.readFileSync(new URL('../scripts/sync-ui.mjs',import.meta.url),'utf8');
+test('Doctor invitation redirects to the clinic route and consumes its signed session',()=>{assert.ok(ownerFunction.includes('new URL("/clinic/index.html", siteOrigin)'));assert.ok(ownerFunction.includes('searchParams.set("portal", "doctor")'));assert.ok(stage2.includes('api.consumeAuthRedirect()'));});
+test('Framework sync publishes the same owner portal and public config',()=>{for(const name of ['owner.html','owner.css','owner.js'])assert.ok(syncScript.includes("'"+name+"'"),name);assert.ok(syncScript.includes("'config.js'"));});
+
 console.log(`${count} domain/transport checks passed. Database RLS integration and browser visual checks require their real runtimes.`);

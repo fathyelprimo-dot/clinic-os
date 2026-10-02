@@ -24,3 +24,14 @@ dialog{margin:auto;border:1px solid #dbe8e8;border-radius:19px;width:min(94vw,57
 @media(max-width:370px){.header{padding:14px}.hero{padding-left:14px;padding-right:14px}.hero h1{font-size:29px}.hero-actions{gap:9px}.primary,.secondary{font-size:12px;padding:11px 14px}.brand strong{font-size:15px}.brand small{font-size:9px}.brand-icon{width:36px;height:36px}.staff-link{padding:8px;font-size:10px}.info-strip,.about-grid,.tracking-feature,.faq-section,footer{margin-left:14px;margin-right:14px}.care-cards strong{font-size:15px}.care-cards article{padding:17px 12px}.service-category{left:12px}.slot-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.journey-line{gap:5px;font-size:10px}.journey-line i{max-width:10px}.booking-body{padding:18px}.date-input{width:145px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important}}
 @media print{body>*{display:none!important}#print-area{display:block!important;font-family:ClinicArabic,Tahoma,sans-serif;background:white;color:black;padding:24px;direction:rtl}#print-area p{font-size:15px}#print-area h1{font-size:26px}}
+
+body[data-template="ocean"]{--surface:#f3f7ff;--teal-soft:#eaf1ff;--ink:#163653}
+body[data-template="violet"]{--surface:#faf7ff;--teal-soft:#f2eaff;--ink:#35234d}
+.track-card-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.track-result+.track-result{margin-top:16px}
+.doctor-photo-preview{width:96px;height:96px;object-fit:cover;border-radius:18px;border:1px solid var(--line);background:#eef3f4}
+.upload-control{display:grid;gap:8px;padding:14px;border:1px dashed #b8cbd0;border-radius:12px;background:#f7fafb}
+.upload-control input{border:0;padding:0;background:transparent}
+.upload-control small{color:var(--quiet)}
+#settings-form details summary{cursor:pointer;padding:10px 0;color:var(--primary);font-weight:650}
+#settings-form details .form-grid{padding-top:12px}

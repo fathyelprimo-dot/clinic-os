@@ -2,7 +2,7 @@
 
 Existing Arabic RTL visual foundation, extended with doctor-controlled services, priority queue and ETA, clinic branding/maps, payment tracking, patient medical records and printable prescriptions, plus a Supabase Auth/RLS/Realtime implementation.
 
-**Supabase is connected to a new, empty Clinic OS project.** The six migrations and RLS policies are applied, and the public publishable key is configured. No clinic tenant, clinic profile, services, or doctor Auth membership has been provisioned yet, so the live interface shows a setup message and does not accept bookings until those records exist. The isolated, in-memory preview requires `?demo=1`.
+**Supabase is connected to the Clinic OS project.** Its production schema, RLS policies, owner controls and public clinic-media bucket are active. No clinic tenant, platform-owner user, doctor Auth membership, or clinic services are provisioned yet, so the live clinic route shows a setup message and does not accept bookings until those records exist. The isolated, in-memory preview requires `?demo=1`. The production database has additional owner/customization migrations applied beyond the base migration files currently checked into this repository; sync those migrations before recreating production from scratch.
 
 ## Preview and tests
 
@@ -26,14 +26,17 @@ The framework route embeds the same synchronized UI; there is one active impleme
 
 ## Key files
 
-- `dist/stage2.js`: booking, staff controls, medical records and live/demo adapters.
+- `dist/stage2.js`: phone-verified bookings, phone-only patient tracking, staff controls, medical records, clinic customization and live/demo adapters.
+- `dist/owner.html`, `dist/owner.js`, `dist/owner.css`: authenticated owner dashboard for clinic creation, manual slugs, subscriptions, activation, service editing and change requests.
 - `dist/experience.css`: responsive visual improvements, locally hosted Arabic typography and accessible dialog styles.
-- `dist/domain.js`: service validation, Cairo dates, smart ETA and Maps links.
+- `dist/domain.js`: service validation, Cairo dates, day/hour/minute smart ETA, Maps-link validation and directions.
 - `dist/supabase-client.js`: Supabase Auth/REST RPC and Realtime transport.
 - `dist/config.js`: **public** project URL/key and optional default clinic slug only.
 - `supabase/migrations/`: schema, RLS, authenticated RPC, transactional queue and notification delivery.
 - `supabase/tests/tenant_roles.sql`: database tenant/role tests, ready to run on a disposable Supabase project.
+- `supabase/functions/clinic-platform-admin/` and `clinic-owner-bootstrap/`: JWT-verified owner operations and allowlisted owner invitation.
 - `supabase/functions/notification-dispatch/`: optional external provider adapter, server secrets only.
+- `docs/OWNER-PORTAL.md`: owner sign-in, clinic URLs, uploads and domain setup notes.
 - `docs/PHASE2.md`: setup, provisioning, notification contract and actual validation limits.
 
 All durable clinic data is in Supabase PostgreSQL. Recent appointments and the queue load at sign-in; older appointments and payments load through authenticated, bounded pages. Browser arrays are short-lived UI caches of database responses, form drafts, or isolated demo fixtures; the application never writes business records or auth tokens to `localStorage`, `sessionStorage`, or IndexedDB. Patients are fetched in pages, bookings and queue actions go through transactional RPCs, and each tenant table is protected by RLS.
@@ -42,4 +45,4 @@ Cash, InstaPay and wallet receipts require manual staff confirmation. Selecting 
 
 Supabase project dashboard: https://supabase.com/dashboard/project/xgowtcloqiivxeqhgndr. The project is empty by design until the clinic profile, real doctor Auth user/membership, and doctor-selected services are provisioned.
 
-32 domain, transport and persistence-contract checks pass, and the tenant-role SQL integration test passed on the new Supabase project. The browser smoke test could not run because Playwright’s configured Microsoft Edge binary is not installed; the framework build and lint tools are also missing from the workspace dependencies.
+43 domain, transport and owner-contract checks are defined in `scripts/test-phase2.mjs`. Run them with Node on the checked-out repository; RLS and browser checks still require the connected Supabase and browser runtimes.

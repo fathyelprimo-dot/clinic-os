@@ -13,7 +13,9 @@
   for(const b of bookings.filter(b=>b.triage==='pending'))result[b.id]={minutes:null,reason:'triage'};
   return result;
  }
- function mapsUrl(clinic){if(Number.isFinite(clinic.latitude)&&Number.isFinite(clinic.longitude))return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(clinic.latitude+','+clinic.longitude);return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(clinic.address||clinic.name);}
+ function formatDuration(minutes){if(minutes==null||!Number.isFinite(Number(minutes)))return '—';const total=Math.max(0,Math.ceil(Number(minutes)));if(total===0)return 'الآن';const days=Math.floor(total/1440),hours=Math.floor(total%1440/60),mins=total%60,fmt=n=>new Intl.NumberFormat('ar-EG').format(n),parts=[];if(days)parts.push(days===1?'يوم':days===2?'يومين':fmt(days)+' أيام');if(hours)parts.push(hours===1?'ساعة':hours===2?'ساعتين':fmt(hours)+' ساعات');if(mins)parts.push(mins===1?'دقيقة':mins===2?'دقيقتين':fmt(mins)+' دقيقة');return parts.join(' و ');}
+ function isMapsLink(value){try{const u=new URL(String(value||'')),h=u.hostname.toLowerCase();return u.protocol==='https:'&&(h==='maps.app.goo.gl'||h==='maps.google.com'||h==='google.com'&&u.pathname.startsWith('/maps')||h==='www.google.com'&&u.pathname.startsWith('/maps'));}catch{return false;}}
+ function mapsUrl(clinic){if(isMapsLink(clinic.address))return new URL(clinic.address).href;if(Number.isFinite(clinic.latitude)&&Number.isFinite(clinic.longitude))return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(clinic.latitude+','+clinic.longitude);return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(clinic.address||clinic.name);}
  function cairoInstant(date,time){const target=Date.parse(date+'T'+time+':00Z');let instant=target;for(let i=0;i<3;i++){const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(instant)).map(p=>[p.type,p.value]));const local=Date.parse(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`);instant+=target-local;}return new Date(instant).toISOString();}
  function availableSlots(clinic,service,date,bookings=[],now=Date.now()){
   if(!service?.active)return [];
@@ -27,5 +29,5 @@
   }
   return result;
  }
- root.ClinicDomain={normalizePhone,cairoDate,cairoInstant,serviceDefaults,validateService,estimates,mapsUrl,availableSlots};
+ root.ClinicDomain={normalizePhone,cairoDate,cairoInstant,serviceDefaults,validateService,estimates,formatDuration,isMapsLink,mapsUrl,availableSlots};
 })(globalThis);
