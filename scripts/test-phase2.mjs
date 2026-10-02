@@ -60,6 +60,7 @@ const inflight=api.refresh();await api.logout();releaseRefresh({ok:true,json:asy
 test('Delayed token refresh cannot resurrect a logged-out session',()=>assert.equal(api.session,null));
 
 const ownerPage=fs.readFileSync(new URL('owner.html',dir),'utf8');
+test('Platform home opens the owner console and hides patient/support navigation',()=>{const rootPage=fs.readFileSync(new URL('../app/page.tsx',import.meta.url),'utf8');assert.ok(rootPage.includes('src="/owner.html"'));assert.equal(rootPage.includes('/clinic/index.html'),false);const navStart=ownerPage.indexOf('<nav');const navEnd=ownerPage.indexOf('</nav>',navStart);assert.ok(navStart>=0&&navEnd>navStart);const ownerNav=ownerPage.slice(navStart,navEnd+6);assert.equal(ownerNav.includes('clinic/index.html'),false);assert.equal(ownerNav.includes('wa.me'),false);});
 const ownerClient=fs.readFileSync(new URL('owner.js',dir),'utf8');
 const ownerCss=fs.readFileSync(new URL('owner.css',dir),'utf8');
 const tenantRls=fs.readFileSync(new URL('../supabase/tests/tenant_roles.sql',import.meta.url),'utf8');

@@ -3,8 +3,8 @@ import "./globals.css";
 import "./clinic.css";
 
 export const metadata: Metadata = {
-  title: "د. أحمد علي | حجز ومتابعة العيادة",
-  description: "بداية تجريبية لموقع العيادة: حجز موعد ومتابعة الدور وإدارة الحجوزات باللغة العربية.",
+  title: "Clinic OS | لوحة مالك المنصة",
+  description: "إدارة العيادات والاشتراكات وروابط الأطباء من لوحة المالك في Clinic OS.",
   other: {
     "codex-preview": "development",
   },
