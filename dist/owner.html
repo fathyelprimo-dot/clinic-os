@@ -25,13 +25,12 @@
     <section id="login-panel" class="auth-panel" aria-labelledby="login-title">
       <div class="step-kicker"><span>01</span> وصول آمن للمالك</div>
       <h1 id="login-title">أدر عياداتك من مكان واحد</h1>
-      <p class="lead">فعّل حسابك برابط البريد أول مرة، وبعدها يمكنك الدخول بالبريد وكلمة المرور.</p>
+      <p class="lead">سجّل الدخول ببريد المالك وكلمة المرور، أو أرسل رابطًا آمنًا لاستعادة كلمة المرور.</p>
       <form id="email-form" class="email-form">
         <label for="owner-email">بريد المالك الإلكتروني</label>
         <input id="owner-email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="name@example.com" dir="ltr">
         <div class="button-row">
-          <button class="button primary" type="submit">إرسال رابط الدخول</button>
-          <button class="button outline" id="bootstrap-owner" type="button">طلب تفعيل حساب المالك</button>
+          <button class="button primary" type="submit">إرسال رابط استعادة كلمة المرور</button>
         </div>
       </form>
       <div class="email-form password-entry">
@@ -53,9 +52,10 @@
         <div class="owner-session"><span class="pulse"></span><span id="owner-email-label"></span></div>
       </div>
 
-      <details class="panel password-settings">
-        <summary>تعيين أو تغيير كلمة المرور</summary>
-        <p class="panel-intro">بعد تفعيل البريد، عيّن كلمة مرور جديدة وفريدة لا تقل عن ١٤ حرفًا.</p>
+      <details class="panel password-settings" id="platform-settings">
+        <summary>إعدادات المنصة</summary>
+        <h2>تغيير كلمة مرور المالك</h2>
+        <p class="panel-intro">من هنا تقدر تعيّن كلمة مرور جديدة أو تغيّرها لاحقًا. استخدم كلمة فريدة لا تقل عن ١٤ حرفًا.</p>
         <form id="password-form" class="email-form">
           <label for="new-owner-password">كلمة المرور الجديدة<input id="new-owner-password" type="password" autocomplete="new-password" minlength="14" required dir="ltr"></label>
           <label for="confirm-owner-password">تأكيد كلمة المرور<input id="confirm-owner-password" type="password" autocomplete="new-password" minlength="14" required dir="ltr"></label>
