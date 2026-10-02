@@ -3,7 +3,7 @@ const D=ClinicDomain,config=globalThis.CLINIC_CONFIG||{},query=new URLSearchPara
 let api=null,role='patient',view='patient',tab='appointments',services=demo?D.serviceDefaults.map(s=>({...s})):[];
 let clinic=demo?{id:'demo',name:'د. أحمد علي',specialty:'استشاري الباطنة والجهاز الهضمي',address:'مدينة نصر، القاهرة',latitude:null,longitude:null,opens:'18:00',closes:'21:00',accent:'#087f7b',template:'classic',tagline:'رعاية قريبة. وقتك محفوظ.',about:'احجز زيارتك وتابع دورك بسهولة.',instapay:'',wallet:'',paused:false,buffer_minutes:5}:{id:null,name:'Clinic OS',specialty:'',address:'',latitude:null,longitude:null,opens:'',closes:'',accent:'#087f7b',template:'classic',tagline:'',about:'',instapay:'',wallet:'',paused:false,buffer_minutes:5};
 let workspace='workspace',adminDate=D.cairoDate(),stateFilter='all';
-let patients=[],bookings=[],historyBookings=[],historyLoaded=false,historyLoading=null,notifications=[],medical={},encounters=[],selectedService='normal',selectedDate=D.cairoDate(),selectedTime='',selectionTouched=false,available=[],trackedId=null,requestKey=crypto.randomUUID(),pending=false,refreshing=false,editingService=null,activeRecord=null,lastPrescription=null,toastTimer,loadRevision=0;
+let patients=[],bookings=[],historyBookings=[],historyLoaded=false,historyLoading=null,notifications=[],medical={},encounters=[],selectedService='normal',selectedDate=D.cairoDate(),selectedTime='',selectionTouched=false,available=[],trackedId=null,requestKey=crypto.randomUUID(),pending=false,refreshing=false,editingService=null,activeRecord=null,lastPrescription=null,toastTimer,loadRevision=0,autoAdvanceSearchKey='',autoAdvanceSearchAt=0;
 const money=n=>Number(n).toLocaleString('ar-EG')+' ج.م',num=n=>Number(n).toLocaleString('ar-EG'),time=t=>D.formatTime(t);
 const status=b=>({waiting:'في الانتظار',inside:'داخل الكشف',done:'تم الكشف',cancelled:'ملغي'}[b.status]);
 const staff=()=>['doctor','reception'].includes(role),selected=()=>services.find(s=>s.id===selectedService&&s.active);
@@ -70,10 +70,31 @@ function turnForTime(value,duration){
  return turnLabel(Math.max(0,Math.floor((Number(match[1])*60+Number(match[2])-(oh*60+om))/serviceDuration)));
 }
 async function loadAvailability(){
- const revision=++loadRevision;$('.booking-card').classList.add('loading');$('#slots-count').textContent='جارٍ تحميل المواعيد…';available=[];selectedTime=selectedTime||'';$('#continue-booking').disabled=true;
- try{if(!selected()){renderSlots();return;}if(live){const loaded=await api.rpc('available_slots',{p_clinic:clinic.id,p_service:selectedService,p_date:selectedDate});if(revision!==loadRevision)return;available=loaded;}else if(demo){
- available=D.availableSlots(clinic,selected(),selectedDate,bookings);
- }else available=[];const options=turnOptions(),selectionStillFree=options.some(option=>option.time===selectedTime&&option.available);if(!selectionStillFree)selectedTime=selectionTouched?'':(options.find(option=>option.available)?.time||'');renderSlots();}catch(e){if(revision===loadRevision){available=[];selectedTime='';renderSlots();$('#slots').innerHTML='<p class="slot-empty error">تعذر تحميل المواعيد. غيّر التاريخ لإعادة المحاولة.</p>';}throw e;}finally{if(revision===loadRevision)$('.booking-card').classList.remove('loading');}
+ const revision=++loadRevision,startDate=selectedDate;$('.booking-card').classList.add('loading');$('#slots-count').textContent='جارٍ تحميل المواعيد…';available=[];selectedTime=selectedTime||'';$('#continue-booking').disabled=true;
+ const slotsFor=async date=>live?await api.rpc('available_slots',{p_clinic:clinic.id,p_service:selectedService,p_date:date}):demo?D.availableSlots(clinic,selected(),date,bookings):[];
+ try{
+  if(!selected()){renderSlots();return;}
+  available=await slotsFor(startDate);if(revision!==loadRevision)return;
+  let options=turnOptions(),advanced=false;
+  if(options.length&&!options.some(option=>option.available)){
+   const searchKey=clinic.id+'|'+selectedService+'|'+startDate,now=Date.now();
+   if(searchKey!==autoAdvanceSearchKey||now-autoAdvanceSearchAt>=60000){
+    autoAdvanceSearchKey=searchKey;autoAdvanceSearchAt=now;
+    const originalAvailable=available,maxDate=D.cairoDate(new Date(now+30*86400000));
+    for(let offset=1;offset<=30;offset++){
+     const nextDate=D.cairoDate(new Date(Date.parse(startDate+'T12:00:00Z')+offset*86400000));
+     if(nextDate>maxDate)break;
+     const nextAvailable=await slotsFor(nextDate);if(revision!==loadRevision)return;
+     available=nextAvailable;
+     const first=turnOptions().find(option=>option.available);
+     if(first){selectedDate=nextDate;selectionTouched=false;selectedTime=first.time;advanced=true;break;}
+    }
+    if(!advanced){selectedDate=startDate;available=originalAvailable;}
+   }
+  }
+  if(advanced)notify('كل أدوار اليوم اتملت؛ نقلنا الحجز لأقرب يوم متاح: '+new Intl.DateTimeFormat('ar-EG',{timeZone:'Africa/Cairo',weekday:'short',month:'short',day:'numeric'}).format(new Date(selectedDate+'T12:00:00Z'))+'.');
+  options=turnOptions();const selectionStillFree=options.some(option=>option.time===selectedTime&&option.available);if(!selectionStillFree)selectedTime=selectionTouched?'':(options.find(option=>option.available)?.time||'');renderSlots();
+ }catch(e){if(revision===loadRevision){available=[];selectedTime='';renderSlots();$('#slots').innerHTML='<p class="slot-empty error">تعذر تحميل المواعيد. غيّر التاريخ لإعادة المحاولة.</p>';}throw e;}finally{if(revision===loadRevision)$('.booking-card').classList.remove('loading');}
 }
 function renderSlots(){
  const ds=[0,1,2].map(n=>({date:D.cairoDate(new Date(Date.now()+n*86400000)),label:['اليوم','غدًا','بعد غد'][n]}));
