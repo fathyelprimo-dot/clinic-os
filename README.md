@@ -7,7 +7,7 @@ Clinic OS is an Arabic-first, RTL clinic booking and queue product built on the 
 - GitHub repository: https://github.com/fathyelprimo-dot/clinic-os
 - Supabase project: `xgowtcloqiivxeqhgndr`
 - The Supabase production project has 15 migrations applied, including server-side enforcement that immediately blocks tenant access when the owner suspends a clinic or its subscription has expired.
-- The database currently has no provisioned clinic tenant, platform-owner account, doctor membership, or live service catalog. The normal clinic route therefore fails closed and does not accept real bookings.
+- The connected Site owner's email is on the Supabase owner-bootstrap allowlist, but it has not yet been claimed as a platform-admin Auth account. The database still has no clinic tenant, doctor membership, or live service catalog. The normal clinic route therefore fails closed and does not accept real bookings.
 - The hosted preview at https://clinic-os-elprimo.violaelprimo.chatgpt.site is still on version 8. It is separate from this GitHub repository and does not automatically receive commits from `main`.
 - Six base migrations are checked into this repository. Eight owner/onboarding/tenant migrations that are present in the production database are still missing from Git history. Production migration versions also differ from the old local filenames. Do not run `supabase db push` against production or use the repository to recreate a fresh database until that history is reconciled.
 
@@ -25,7 +25,7 @@ Cash, InstaPay, and wallet payments are recorded for staff confirmation; no onli
 
 ## What still needs activation or implementation
 
-- Provision the real platform-owner email, create the first clinic and doctor membership, and configure real services. No actual tenant or account is in the live project yet.
+- The owner's email is allowlisted. Open `/owner.html`, choose «طلب تفعيل حساب المالك», and complete the secure email invitation/claim. Then create the first clinic and doctor membership and configure real services.
 - Configure Supabase phone OTP with an SMS provider. The code verifies phone identity, but the provider is not configured here.
 - Enable the database reminder schedule and configure the contracted SMS/WhatsApp delivery adapter. Browser notifications alone do not reach patients when the page is closed.
 - Buy and verify the intended domain, then configure DNS and the verified clinic-domain records.

@@ -31,9 +31,9 @@ This means the owner can stop tenant access immediately, existing logged-in staf
 - Supabase project: `xgowtcloqiivxeqhgndr`.
 - 15 migrations are currently applied to production; six original migrations and the newly added suspension/expiry migration are in this repository.
 - Eight previously applied owner/onboarding/tenant migrations are missing from the repository. Their production migration versions also differ from older local migration filenames. Reconcile this before using Supabase CLI to rebuild a fresh environment or push migrations; do not blindly replay the older SQL.
-- The live project currently has no platform-owner account, clinic tenant, doctor membership, or real service catalog.
+- The Site owner's email is now on the bootstrap allowlist, but no platform-admin Auth account has claimed it yet. The live project has no clinic tenant, doctor membership, or real service catalog.
 - The hosted public URL is still on Site version 8 and is not automatically built from this GitHub repository. A successful GitHub Actions run does not mean the hosted URL was updated.
-- No owner email, real doctor account, SMS provider, external reminder adapter/cron, online-payment provider, or custom DNS domain is configured.
+- The owner can request the secure activation email from `/owner.html`. No real doctor account, SMS provider, external reminder adapter/cron, online-payment provider, or custom DNS domain is configured.
 
 ## Data persistence and security boundary
 
