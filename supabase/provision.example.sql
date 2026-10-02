@@ -1,0 +1,16 @@
+-- Administrator-only template. Replace IDs with actual Auth user IDs before execution.
+-- Never expose this provisioning operation to the browser.
+-- Example (execute in SQL Editor after reviewing real clinic details):
+-- insert into public.clinics(slug,name,specialty,address,published)
+-- values('dr-ahmed-ali','Doctor name','Specialty','Actual clinic address',true) returning id;
+-- insert into public.memberships(clinic_id,user_id,role)
+-- values('<returned-clinic-uuid>','<actual-auth-user-uuid>','doctor');
+-- insert into public.services(clinic_id,name,category,price,duration_minutes,priority)
+-- values('<returned-clinic-uuid>','Regular','normal',350,20,0),
+--       ('<returned-clinic-uuid>','Urgent','urgent',500,20,10),
+--       ('<returned-clinic-uuid>','Emergency','emergency',650,30,20),
+--       ('<returned-clinic-uuid>','Follow-up','followup',200,15,0);
+-- Prices are examples; the doctor edits all of them before opening bookings.
+-- Optional after domain ownership verification:
+-- insert into public.clinic_domains(hostname,clinic_id,verified)
+-- values('drahmedali.com','<returned-clinic-uuid>',true);

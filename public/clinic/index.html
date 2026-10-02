@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#112f3e">
+  <title>Clinic OS | عيادتك، بترتيب أذكى</title>
+  <meta name="description" content="اختار خدمة وموعدًا، وتابع وقت دخولك المتوقع مع عيادتك.">
+  <link rel="preload" href="fonts/NotoSansArabic.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="clinic.css">
+  <link rel="stylesheet" href="stage2.css">
+  <link rel="stylesheet" href="experience.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23087f7b'/%3E%3Cpath d='M7 16h5l3-7 4 14 3-7h3' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip-link" href="#patient">انتقل إلى المحتوى</a>
+<div class="demo-strip" role="status">جارٍ تجهيز العيادة…</div>
+<header class="header">
+  <a href="#" class="brand" data-action="patient" aria-label="العودة إلى واجهة العيادة">
+    <span class="brand-icon" data-icon="activity"></span>
+    <span><strong>د. أحمد علي</strong><small>استشاري الباطنة والجهاز الهضمي</small></span>
+  </a>
+  <nav class="top-nav" aria-label="التنقل الرئيسي">
+    <button class="active" data-action="patient">العيادة</button>
+    <button data-action="about">الخدمات</button>
+    <button data-action="track">متابعة حجزك</button>
+  </nav>
+  <button class="staff-link" id="view-toggle" data-action="admin"><span data-icon="dashboard"></span>إدارة العيادة</button>
+</header>
+<main id="patient" tabindex="-1">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <div class="eyebrow"><span></span>رعاية قريبة. وقتك محفوظ.</div>
+      <div class="hero-overline" dir="ltr">YOUR CARE, ON YOUR TIME</div>
+      <h1 id="hero-title">اطمّن على صحتك.<br><em>وسيّب ترتيب الدور علينا.</em></h1>
+      <p>اختار خدمتك وموعدك، وتابع وقت دخولك المتوقع من مكانك.</p>
+      <div class="hero-actions">
+        <button class="primary" data-action="choose-slot"><span data-icon="calendar"></span>اختار موعدك <span data-icon="arrow"></span></button>
+        <button class="secondary" data-action="track"><span data-icon="clock"></span>عندي حجز</button>
+      </div>
+      <div class="hero-points">
+        <span><span data-icon="check"></span>السعر والمدة قبل التأكيد</span>
+        <span><span data-icon="shield"></span>بياناتك حسب صلاحيات حسابك</span>
+      </div>
+      <div class="doctor-signature">
+        <div class="initials" aria-hidden="true">أ ع</div>
+        <div><strong>د. أحمد علي</strong><span>استشاري الباطنة والجهاز الهضمي</span></div>
+        <span class="signature-tag">بيانات تجريبية</span>
+      </div>
+      <div class="journey-line" aria-label="خطوات الحجز">
+        <span><b>01</b>اختار موعد</span><i></i><span><b>02</b>أكّد بياناتك</span><i></i><span><b>03</b>تابع دورك</span>
+      </div>
+    </div>
+    <div class="booking-card" id="appointment-picker">
+      <div class="card-top">
+        <span class="tiny-label">موعدك القادم يبدأ هنا</span>
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18"/></svg>
+        <h2>مساحة لراحتك. وموعد يناسبك.</h2>
+        <p>الخدمة، الوقت، والتكلفة في مكان واحد</p>
+      </div>
+      <div class="booking-body">
+        <div class="section-label"><strong>اليوم المناسب ليك</strong><span>بتوقيت القاهرة</span></div>
+        <div class="day-grid" id="days"></div>
+        <div class="section-label"><strong>اختار وقت الوصول</strong><span id="slots-count">المواعيد المتاحة</span></div>
+        <div class="slot-grid" id="slots" aria-live="polite"></div>
+        <div class="fee-line"><span>تكلفة الزيارة</span><strong>350<small>جنيه مصري</small></strong></div>
+        <button class="primary full" data-action="book" id="continue-booking">كمّل بيانات الحجز <span data-icon="arrow"></span></button>
+        <p class="card-note"><span data-icon="shield"></span>دورك المتوقع يظهر بعد تسجيل الحجز</p>
+      </div>
+    </div>
+  </section>
+  <section class="info-strip" aria-label="معلومات العيادة">
+    <div><span data-icon="pin"></span><span><small>عنوان العيادة</small><strong>مدينة نصر، القاهرة</strong></span></div>
+    <div><span data-icon="clock"></span><span><small>مواعيد العمل</small><strong>١٨:٠٠ — ٢١:٠٠</strong></span></div>
+    <div><span data-icon="wallet"></span><span><small>طرق الدفع</small><strong>كاش / InstaPay / محفظة</strong></span></div>
+    <button data-action="track"><span class="live-dot"></span><span><small>متابعة وقت الدخول</small><strong id="live-number">تابع حجزك من هنا</strong></span><span data-icon="arrow"></span></button>
+  </section>
+  <section class="about-grid" id="about" aria-labelledby="services-title">
+    <div class="about-copy">
+      <span class="tiny-label teal">الخدمة اللي تناسب زيارتك</span>
+      <h2 id="services-title">كل زيارة ليها<br>وقتها واهتمامها.</h2>
+      <p>اختار نوع الزيارة المناسب، وشوف السعر والمدة قبل ما تحجز. العيادة تحدد الخدمات والأولويات حسب احتياج المرضى.</p>
+      <p class="muted">الحالات الطارئة تحتاج تقييم الدكتور. لو في خطر فوري، توجّه لأقرب طوارئ.</p>
+      <button class="inline-button" data-action="choose-slot">اختار الخدمة والموعد <span data-icon="arrow"></span></button>
+    </div>
+    <div class="care-cards"></div>
+  </section>
+  <section class="tracking-feature" aria-labelledby="tracking-title">
+    <div class="tracking-copy"><span class="tiny-label">دورك معاك، أينما كنت</span><h2 id="tracking-title">اعرف إمتى تتحرك.<br>ووصل في الوقت المناسب.</h2><p>الوقت المتوقع يتحدث مع حركة العيادة. دخل مدة طريقك عشان تعرف الوقت المناسب للتحرك.</p><button class="light-button" data-action="track">تابع حجزك <span data-icon="arrow"></span></button></div>
+    <ol class="tracking-steps">
+      <li><span data-icon="calendar"></span><div><strong>ابدأ بحجزك</strong><p>خدمة وموعد واضحين، برقم حجز خاص بيك.</p></div></li>
+      <li><span data-icon="clock"></span><div><strong>شوف تقدير وقت الدخول</strong><p>يتغير حسب مدة الكشف وأولوية الحالات.</p></div></li>
+      <li><span data-icon="bell"></span><div><strong>اتحرك على مهلك</strong><p>فعّل التنبيه أثناء فتح الصفحة وراجع الاتجاهات.</p></div></li>
+    </ol>
+  </section>
+  <section class="faq-section" aria-labelledby="faq-title">
+    <div><span class="tiny-label teal">قبل زيارتك</span><h2 id="faq-title">أسئلة بسيطة.<br>إجابات واضحة.</h2></div>
+    <div class="faq-list">
+      <details><summary>هل الموعد هو وقت دخولي بالضبط؟</summary><p>الموعد هو وقت الوصول المحجوز. وقت دخول الكشف تقديري ويتغير حسب الزيارات السابقة والأولوية. راجع متابعة حجزك قبل التحرك.</p></details>
+      <details><summary>إزاي أدفع بـ InstaPay أو محفظة؟</summary><p>لو العيادة فعّلت الطريقة، تفاصيل التحويل بتظهر أثناء الحجز. الاستقبال يؤكد الاستلام يدويًا بعد مراجعة الدفع.</p></details>
+      <details><summary>لو الزيارة طوارئ؟</summary><p>طلب الطوارئ ينتظر مراجعة الدكتور لتحديد الأولوية. الخدمة ليست بديلًا للإسعاف؛ لو في خطر فوري توجّه للطوارئ مباشرة.</p></details>
+      <details><summary>مين يقدر يشوف الملف الطبي؟</summary><p>الدكتور المسؤول في عيادتك فقط. الاستقبال يتعامل مع بيانات الحجز والتحصيل من غير الوصول للتشخيص والروشتة.</p></details>
+    </div>
+  </section>
+  <footer><span class="brand-icon small" data-icon="activity"></span><strong>د. أحمد علي</strong><span>رعاية تبدأ بالاهتمام.</span><small>تعمل بواسطة <b dir="ltr">CLINIC OS</b> · نسخة تجريبية</small></footer>
+</main>
+<main id="admin" class="admin" hidden tabindex="-1">
+  <div class="admin-shell">
+    <aside class="admin-sidebar" aria-label="قائمة إدارة العيادة">
+      <span class="sidebar-kicker" dir="ltr">CLINIC OS / WORKSPACE</span>
+      <div class="sidebar-profile"><span data-icon="shield"></span><strong id="role-label">فريق العيادة</strong><small>مساحة عملك اليومية</small></div>
+      <nav>
+        <button class="active" data-action="workspace"><span data-icon="dashboard"></span>نظرة عامة</button>
+        <button data-action="appointments"><span data-icon="calendar"></span>الحجوزات</button>
+        <button data-action="payments"><span data-icon="wallet"></span>التحصيل</button>
+        <button data-action="records" data-doctor><span data-icon="record"></span>ملفات المرضى</button>
+        <button data-action="services" data-doctor><span data-icon="activity"></span>الخدمات والأسعار</button>
+        <button data-action="settings" data-doctor><span data-icon="settings"></span>إعدادات العيادة</button>
+      </nav>
+      <div class="sidebar-bottom"><span class="sidebar-mark" data-icon="activity"></span><p>اهتم بالمريض.<br>كل التفاصيل هنا.</p><button data-action="patient"><span data-icon="arrow"></span>واجهة المريض</button></div>
+    </aside>
+    <div class="admin-content">
+      <div class="admin-heading">
+        <div><div class="eyebrow"><span></span>مساحة عمل العيادة</div><h1>يوم منظم. رعاية أفضل.</h1><p><span id="date"></span><span class="heading-divider">/</span>الحجوزات، الدور، والتحصيل</p></div>
+        <div class="admin-actions"><button class="icon-button" data-action="notifications" aria-label="فتح التنبيهات"><span data-icon="bell"></span></button><button class="primary" data-action="book">+ حجز جديد</button></div>
+      </div>
+      <div id="stats" class="stats"></div>
+      <div class="admin-grid">
+        <section class="admin-main">
+          <div class="admin-tabs" role="tablist" aria-label="بيانات العيادة"><button role="tab" id="tab-appointments" aria-controls="table-panel" aria-selected="true" class="active" data-tab="appointments">الحجوزات</button><button role="tab" id="tab-payments" aria-controls="table-panel" aria-selected="false" tabindex="-1" data-tab="payments">التحصيل</button></div>
+          <div class="table-tools"><h2 id="table-title">الحجوزات والملفات</h2><label class="search"><span data-icon="search"></span><input id="query" placeholder="ابحث بالاسم أو الموبايل" aria-label="بحث الحجوزات"></label></div>
+          <div class="table-filters"><label>تاريخ الزيارة<input type="date" id="admin-date"></label><label>الحالة<select id="status-filter"><option value="all">كل الحالات</option><option value="waiting">في الانتظار</option><option value="inside">داخل الكشف</option><option value="done">تم الكشف</option><option value="cancelled">ملغي</option><option value="unpaid">غير محصّل</option></select></label><button class="inline-button" data-action="all-dates">كل التواريخ</button><span id="results-count"></span></div>
+          <div class="table-scroll" id="table-panel" role="tabpanel" aria-labelledby="tab-appointments" tabindex="0"></div>
+          <div class="table-footer">بيانات العيادة حسب صلاحيات الحساب.</div>
+        </section>
+        <aside class="queue-card">
+          <div class="queue-title"><h2>غرفة الكشف</h2><span id="queue-status" class="status done">نشط</span></div>
+          <div class="current-patient" id="current"></div>
+          <button class="primary full" data-action="next" id="next">دخول المريض التالي</button><button class="pause-button" data-action="pause" id="pause">إيقاف الدور مؤقتًا</button>
+          <div class="next-label">قائمة الانتظار <span id="waiting-count"></span></div><div id="queue"></div>
+          <p class="queue-note">الوقت تقديري ويتحدث مع حركة العيادة.</p>
+        </aside>
+      </div>
+    </div>
+  </div>
+</main>
+<dialog id="booking-dialog" aria-labelledby="booking-title">
+  <button class="close-dialog" data-close aria-label="إغلاق">×</button>
+  <div class="dialog-eyebrow">02 / تأكيد بيانات الزيارة</div>
+  <h2 id="booking-title">خطوة واحدة وموعدك جاهز</h2>
+  <p>بيانات بسيطة تساعدنا نرتب زيارتك.</p>
+  <form id="booking-form" class="booking-form">
+    <div class="selected-summary"><span id="selected-slot"></span><button type="button" data-action="change-slot">تغيير الموعد</button></div>
+    <label>اسم المريض<input name="name" required minlength="3" maxlength="80" placeholder="الاسم بالكامل" autocomplete="name"></label>
+    <label>رقم الموبايل<input name="phone" required inputmode="tel" dir="ltr" maxlength="14" placeholder="01xxxxxxxxx" autocomplete="tel"></label>
+    <fieldset><legend>نوع الزيارة</legend><div class="radio-options"><label><input type="radio" name="kind" value="كشف عادي" checked>كشف عادي</label><label><input type="radio" name="kind" value="متابعة">متابعة</label></div></fieldset>
+    <fieldset><legend>طريقة الدفع</legend><div class="radio-options"><label><input type="radio" name="payment" value="cash" checked>كاش في العيادة</label><label><input type="radio" name="payment" value="instapay">InstaPay</label></div></fieldset>
+    <p id="payment-note" class="notice" hidden></p>
+    <div class="fee-line"><span>إجمالي الزيارة</span><strong><span id="total">350</span><small>جنيه</small></strong></div>
+    <p class="error" id="booking-error" role="alert" hidden></p>
+    <button class="primary full" type="submit">تأكيد الحجز</button>
+  </form>
+  <div id="booking-success" class="success-content" hidden></div>
+</dialog>
+<dialog id="track-dialog" aria-labelledby="track-title"><button class="close-dialog" data-close aria-label="إغلاق">×</button><div class="dialog-eyebrow">03 / متابعة حجزك</div><h2 id="track-title">اطمّن على دورك</h2><p>رقم الحجز ورقم الموبايل المستخدم في الحجز.</p><form id="track-form" class="booking-form"><label>رقم الحجز<input name="id" dir="ltr" required placeholder="الصق رقم الحجز هنا" autocomplete="off"></label><label>رقم الموبايل<input name="phone" dir="ltr" inputmode="tel" required autocomplete="tel"></label><button class="primary full">عرض وقت الدخول المتوقع</button></form><div id="track-result" aria-live="polite"></div></dialog>
+<dialog id="notice-dialog" aria-labelledby="notice-title"><button class="close-dialog" data-close aria-label="إغلاق">×</button><div class="dialog-eyebrow">آخر المستجدات</div><h2 id="notice-title">تنبيهات العيادة</h2><p>تحديثات الحجز والدور</p><div id="notices" class="notifications"></div></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="config.js"></script><script src="domain.js"></script><script src="supabase-client.js"></script><script src="icons.js"></script><script src="stage2.js"></script>
+</body></html>
