@@ -90,6 +90,38 @@ Deno.serve(async (request: Request) => {
       return reply(200, { tenants: Array.isArray(data) ? data : [] });
     }
 
+    if (input.action === "list-doctor-activation-requests") {
+      const { data, error } = await admin.rpc("platform_admin_list_doctor_activation_requests", {
+        p_admin_user_id: userId,
+      });
+      if (error) {
+        console.error("Doctor activation request list failed:", error.message);
+        return reply(500, { error: "تعذر تحميل طلبات تفعيل الأطباء." });
+      }
+      return reply(200, { requests: Array.isArray(data) ? data : [] });
+    }
+
+    if (input.action === "decide-doctor-activation") {
+      const requestId = typeof input.request_id === "string" ? input.request_id : "";
+      const decision = input.decision;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
+        return reply(400, { error: "طلب التفعيل غير صالح." });
+      }
+      if (decision !== "approve" && decision !== "reject") {
+        return reply(400, { error: "اختر قبول الطلب أو رفضه." });
+      }
+      const { data, error } = await admin.rpc("platform_admin_decide_doctor_activation_request", {
+        p_admin_user_id: userId,
+        p_request_id: requestId,
+        p_decision: decision,
+      });
+      if (error) {
+        console.error("Doctor activation decision failed:", error.message);
+        return reply(409, { error: "تعذر تنفيذ القرار. حدّث الصفحة وتحقق من حالة الطلب." });
+      }
+      return reply(200, { result: data });
+    }
+
     if (input.action === "update-clinic") {
       const clinicId = typeof input.clinic_id === "string" ? input.clinic_id : "";
       const clinic = input.clinic;
@@ -124,6 +156,21 @@ Deno.serve(async (request: Request) => {
       }
       if (typeof input.is_active !== "boolean") {
         return reply(400, { error: "حالة العيادة غير صالحة." });
+      }
+      if (input.is_active) {
+        const { data: pendingRequest, error: pendingError } = await admin
+          .from("doctor_activation_requests")
+          .select("id")
+          .eq("clinic_id", clinicId)
+          .eq("status", "pending")
+          .maybeSingle();
+        if (pendingError) {
+          console.error("Pending doctor activation lookup failed:", pendingError.message);
+          return reply(503, { error: "تعذر التحقق من طلب تفعيل الطبيب." });
+        }
+        if (pendingRequest) {
+          return reply(409, { error: "راجع طلب تفعيل الطبيب واختر القبول أو الرفض أولًا." });
+        }
       }
       const { error } = await admin.rpc("platform_admin_set_clinic_active", {
         p_admin_user_id: userId,
@@ -243,7 +290,7 @@ Deno.serve(async (request: Request) => {
       });
     }
 
-    const { data, error } = await admin.rpc("platform_admin_create_tenant", {
+    const { data, error } = await admin.rpc("platform_admin_create_tenant_pending", {
       p_admin_user_id: userId,
       p_doctor_user_id: invitation.user.id,
       p_data: { ...clinic, doctor_email: doctorEmail },
@@ -259,7 +306,7 @@ Deno.serve(async (request: Request) => {
       console.error("Tenant creation failed:", message);
       return reply(400, { error: "لم تكتمل إضافة العيادة. راجع الحقول وحاول مرة أخرى." });
     }
-    return reply(201, { tenant: data, invite_sent: true });
+    return reply(201, { tenant: data, invite_sent: true, activation_status: "pending" });
   } catch (error) {
     console.error("Platform admin request failed:", error);
     return reply(500, { error: "حدث عطل مؤقت. حاول مرة أخرى." });
