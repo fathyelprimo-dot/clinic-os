@@ -1,12 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const allowedOrigins = new Set(
-  (Deno.env.get("OWNER_BOOTSTRAP_ORIGINS") || "https://clinic-os-elprimo.violaelprimo.chatgpt.site")
+const allowedOrigins = new Set([
+  "https://clinic-os.fathyelprimo.workers.dev",
+  "https://clinic-os-elprimo.violaelprimo.chatgpt.site",
+  ...(Deno.env.get("OWNER_BOOTSTRAP_ORIGINS") || "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
-);
+]);
 
 function corsHeaders(origin: string) {
   return {
