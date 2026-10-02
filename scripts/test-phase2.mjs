@@ -17,7 +17,7 @@ const publicConfig=fs.readFileSync(new URL('config.js',dir),'utf8');
 const schema=fs.readFileSync(new URL('../supabase/migrations/202609300001_clinic_os.sql',import.meta.url),'utf8');
 const realtime=fs.readFileSync(new URL('../supabase/migrations/202610010001_persistence_realtime.sql',import.meta.url),'utf8');
 const historySql=fs.readFileSync(new URL('../supabase/migrations/202610010003_appointment_history.sql',import.meta.url),'utf8');
-const queueFix=fs.readFileSync(new URL('../supabase/migrations/20261002035000_queue_arrival_eta_and_next.sql',import.meta.url),'utf8');
+const queueFix=fs.readFileSync(new URL('../supabase/migrations/20261002033303_queue_arrival_eta_and_next.sql',import.meta.url),'utf8');
 test('Clinic data and Auth sessions never use persistent browser storage',()=>{for(const source of [stage2,apiSource])assert.doesNotMatch(source,/\b(?:localStorage|sessionStorage|indexedDB)\b/);});
 test('Demo data is opt-in and the normal app fails closed without Supabase',()=>{assert.match(stage2,/demo=query\.get\('demo'\)==='1'/);assert.match(stage2,/live=Boolean\(config\.supabaseUrl&&config\.publishableKey\)/);assert.match(stage2,/initializeUI\(\);if\(demo\)seed\(\);/);assert.match(stage2,/if\(!live&&!demo\)throw Error/);});
 test('Live browser config contains only a publishable Supabase key',()=>{assert.ok(publicConfig.includes("supabaseUrl: 'https://"));assert.ok(publicConfig.includes("publishableKey: 'sb_publishable_"));assert.doesNotMatch(publicConfig,/publishableKey:\s*'(?:service_role|sb_secret_)/);});
