@@ -16,7 +16,7 @@
  function say(message,error){const node=$('#auth-message');node.textContent=message||'';node.classList.toggle('error',Boolean(error));}
  function toast(message){const node=$('#toast');node.textContent=message;node.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(function(){node.hidden=true;},4200);}
  function setSession(data){if(!data||!data.access_token||!data.refresh_token)throw Error('تعذر استلام جلسة آمنة. افتح رابط الدخول الأخير مرة أخرى.');session={access_token:data.access_token,refresh_token:data.refresh_token,expires_at:data.expires_at||Math.floor(Date.now()/1000)+Number(data.expires_in||3600),user:data.user||null};}
- async function authRequest(path,body){const response=await fetch(base+path,{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json().catch(function(){return null;});if(!response.ok)throw Error(data&&data.msg==='Invalid login credentials'?'راجع البريد الإلكتروني أو أرسل رابط دخول جديد.':'تعذر إكمال تسجيل الدخول. تحقق من البريد والإعدادات وحاول مرة أخرى.');return data;}
+ async function authRequest(path,body){const response=await fetch(base+path,{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json().catch(function(){return null;});if(!response.ok)throw Error(data&&data.msg==='Invalid login credentials'?'البريد الإلكتروني أو كلمة المرور غير صحيحة.':'تعذر إكمال تسجيل الدخول. تحقق من البريد والإعدادات وحاول مرة أخرى.');return data;}
  async function refreshSession(){if(!session||!session.refresh_token)throw Error('انتهت الجلسة. سجّل الدخول مرة أخرى.');const data=await authRequest('/auth/v1/token?grant_type=refresh_token',{refresh_token:session.refresh_token});setSession(data);}
  async function ownerAction(action,payload){
   if(!session)throw Error('سجّل الدخول برابط المالك أولًا.');
@@ -35,6 +35,19 @@
   if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
   const response=await fetch(base+'/functions/v1/clinic-owner-bootstrap',{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify({email:email})});
   if(!response.ok)throw Error('تعذر إرسال طلب التفعيل. افتح لوحة المالك من النطاق المنشور ثم حاول مرة أخرى.');
+ }
+ async function signInWithPassword(email,password){
+  if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
+  const data=await authRequest('/auth/v1/token?grant_type=password',{email:email,password:password});
+  setSession(data);
+  await claimAndLoad();
+ }
+ async function updateOwnerPassword(password){
+  if(!session)throw Error('افتح رابط التفعيل من بريدك أولًا.');
+  if(session.expires_at*1000<Date.now()+60000)await refreshSession();
+  const response=await fetch(base+'/auth/v1/user',{method:'PUT',headers:{apikey:key,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({password:password})});
+  const data=await response.json().catch(function(){return null;});
+  if(!response.ok)throw Error(data&&data.msg==='weak_password'?'اختار كلمة مرور أقوى.':'تعذر تغيير كلمة المرور. أعد فتح رابط التفعيل وحاول مرة أخرى.');
  }
  function captureLinkSession(){
   const params=new URLSearchParams(location.hash.replace(/^#/,''));
@@ -199,6 +212,20 @@
   event.preventDefault();const email=$('#owner-email').value.trim().toLowerCase();
   say('جارٍ طلب رابط دخول آمن…');
   run(async function(){await sendOwnerLink(email);say('لو البريد مسجل ومفعّل، هيوصلك رابط دخول آمن. افتح الرابط على نفس الموقع لإكمال التحقق.');});
+ });
+ $('#password-login').addEventListener('click',function(){
+  const email=$('#owner-email').value.trim().toLowerCase(),password=$('#owner-password').value;
+  if(!email||!password){say('اكتب البريد وكلمة المرور أولًا.',true);return;}
+  say('جارٍ تسجيل الدخول…');
+  run(async function(){try{await signInWithPassword(email,password);$('#owner-password').value='';}catch(error){say(error.message||'تعذر تسجيل الدخول.',true);}});
+ });
+ $('#password-form').addEventListener('submit',function(event){
+  event.preventDefault();
+  const password=$('#new-owner-password').value,confirmation=$('#confirm-owner-password').value,message=$('#password-message');
+  if(password.length<14){message.textContent='كلمة المرور لازم تكون ١٤ حرفًا على الأقل.';message.classList.add('error');return;}
+  if(password!==confirmation){message.textContent='كلمتا المرور غير متطابقتين.';message.classList.add('error');return;}
+  message.textContent='جارٍ حفظ كلمة المرور…';message.classList.remove('error');
+  run(async function(){try{await updateOwnerPassword(password);$('#password-form').reset();message.textContent='تم حفظ كلمة المرور. يمكنك استخدامها في تسجيل الدخول القادم.';message.classList.remove('error');}catch(error){message.textContent=error.message||'تعذر حفظ كلمة المرور.';message.classList.add('error');}});
  });
  $('#bootstrap-owner').addEventListener('click',function(){
   const email=$('#owner-email').value.trim().toLowerCase();if(!email){say('اكتب بريد المالك أولًا.',true);return;}
