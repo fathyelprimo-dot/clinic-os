@@ -42,13 +42,13 @@ test('Travel plus buffer determines leave time',()=>{const e=D.estimates([b('a',
 test('Maps destination is encoded and coordinates used when configured',()=>{assert.ok(D.mapsUrl({latitude:30,longitude:31}).includes('destination=30%2C31'));assert.ok(D.mapsUrl({address:'A&B'}).endsWith('A%26B'));});
 
 // Exercise the actual transport against a deterministic HTTP/WebSocket adapter.
-const requests=[];let callback,openedSocket;
-class Socket{constructor(url){this.url=url;this.readyState=1;this.sent=[];openedSocket=this;}send(raw){this.sent.push(JSON.parse(raw));}close(){this.readyState=3;}}
+const requests=[];let callback;
+class Socket{static instances=[];constructor(url){this.url=url;this.readyState=1;this.sent=[];Socket.instances.push(this);}send(raw){this.sent.push(JSON.parse(raw));}close(){this.readyState=3;}}
 const apiCtx=vm.createContext({ClinicDomain:D,fetch:async(url,options)=>{requests.push({url,options});return {ok:true,json:async()=>url.includes('/token')?{access_token:'user-jwt',refresh_token:'refresh',expires_at:Date.now()/1000+3600}:{ok:true}};},WebSocket:Socket,setInterval:()=>1,clearInterval(){},setTimeout:()=>2,clearTimeout(){},URL,console});
 vm.runInContext(fs.readFileSync(new URL('supabase-client.js',dir),'utf8'),apiCtx);const api=new apiCtx.ClinicAPI({supabaseUrl:'https://example.supabase.co',publishableKey:'public-key'});
 await api.login('doctor@example.test','password');await api.rpc('clinic_snapshot',{p_clinic:'tenant-a'});
 test('API sends authenticated user JWT, never service-role bypass',()=>{const r=requests.at(-1);assert.equal(r.options.headers.Authorization,'Bearer user-jwt');assert.equal(JSON.parse(r.options.body).p_clinic,'tenant-a');});
-api.subscribe('tenant-a',()=>callback=true,()=>{});openedSocket.onopen();
+api.subscribe('tenant-a',()=>callback=true,()=>{});const openedSocket=Socket.instances.at(-1);openedSocket.onopen();
 test('Realtime subscription scopes every channel filter',()=>{const join=openedSocket.sent[0];assert.equal(join.payload.access_token,'user-jwt');assert.ok(join.payload.config.postgres_changes.every(x=>x.filter.endsWith('tenant-a')));});
 openedSocket.onmessage({data:JSON.stringify({event:'postgres_changes'})});test('Realtime event refreshes visible state',()=>assert.equal(callback,true));api.disconnect();
 test('Disconnect stops the socket',()=>assert.equal(openedSocket.readyState,3));
@@ -73,6 +73,7 @@ test('Doctor photo upload is scoped to clinic-media with image type and size lim
 test('Doctor invitation callback restores a memory-only session and opens the doctor workspace',()=>{assert.ok(apiSource.includes('consumeAuthRedirect'));assert.ok(stage2.includes('api.consumeAuthRedirect()'));assert.ok(stage2.includes("if(staff())showView('admin')"));assert.doesNotMatch(apiSource,/localStorage|sessionStorage|indexedDB/);});
 test('Owner dashboard assets are referenced and present in the distribution',()=>{for(const m of ownerPage.matchAll(/(?:src|href)="([^"\s]+\.(?:js|css))"/g))assert.ok(fs.existsSync(new URL(m[1].replace(/^\//,''),dir)),m[1]);assert.ok(ownerCss.includes('.steps-grid'));});
 test('Owner controls use the signed-in admin Edge Function, never a service-role key',()=>{assert.ok(ownerClient.includes('/functions/v1/clinic-platform-admin'));assert.ok(ownerClient.includes("Authorization:'Bearer '+session.access_token"));assert.doesNotMatch(ownerClient,/service_role|sb_secret_|localStorage|sessionStorage|indexedDB/);for(const action of ['create-tenant','update-clinic','set-clinic-active','update-subscription','list-change-requests','update-change-request'])assert.ok(ownerClient.includes(action),action);});
+test('Owner clinic service rows use the selector required by the save path',()=>{assert.ok(ownerClient.includes("row.dataset.serviceRow='true'"));assert.ok(ownerClient.includes("$('[data-service-row]'"));});
 test('Owner manually enters a clinic slug and receives patient and doctor links',()=>{assert.match(ownerPage,/name="slug"/);assert.match(ownerPage,/pattern="\[a-z0-9-\]\{3,80\}"/);assert.ok(ownerClient.includes("'/clinic/index.html?clinic='"));assert.ok(ownerClient.includes("&portal=doctor"));});
 test('Doctor customization exposes tagline, about, templates, Google Maps, photo upload and WhatsApp support',()=>{for(const word of ['tagline','about','template','Google Maps','photo_file'])assert.ok(stage2.includes(word),word);assert.ok(stage2.includes('wa.me/201551007018'));});
 

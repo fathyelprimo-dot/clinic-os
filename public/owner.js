@@ -107,7 +107,7 @@
  }
  function addServiceRow(service){
   const item=service||{name:'',category:'normal',price:0,duration_minutes:20,priority:0,active:true};
-  const row=document.createElement('div');row.className='service-editor-row';row.dataset.serviceId=item.id||'';
+  const row=document.createElement('div');row.className='service-editor-row';row.dataset.serviceRow='true';row.dataset.serviceId=item.id||'';
   row.innerHTML='<label>اسم الخدمة<input data-field="name" maxlength="80" required value="'+esc(item.name)+'"></label><label>النوع<select data-field="category"><option value="normal">عادي</option><option value="urgent">مستعجل</option><option value="emergency">طوارئ</option><option value="followup">متابعة</option></select></label><label>السعر<input data-field="price" type="number" min="0" max="100000" step="0.01" required value="'+esc(item.price)+'"></label><label>المدة بالدقائق<input data-field="duration_minutes" type="number" min="5" max="180" required value="'+esc(item.duration_minutes)+'"></label><label>الأولوية<input data-field="priority" type="number" min="0" max="100" required value="'+esc(item.priority)+'"></label><label>الحالة<select data-field="active"><option value="true">متاحة</option><option value="false">موقوفة</option></select></label><button class="remove" type="button" data-remove-service aria-label="حذف الخدمة">×</button>';
   $('#service-rows').appendChild(row);row.querySelector('[data-field=category]').value=item.category||'normal';row.querySelector('[data-field=active]').value=String(item.active!==false);
  }
