@@ -15,7 +15,8 @@
     "ui:sync": "node scripts/sync-ui.mjs",
     "predev": "node scripts/sync-ui.mjs",
     "prebuild": "node scripts/sync-ui.mjs",
-    "test:phase2": "node scripts/test-phase2.mjs"
+    "test:phase2": "node scripts/test-phase2.mjs",
+    "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

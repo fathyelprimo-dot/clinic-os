@@ -45,3 +45,6 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+/dist/client/
+/dist/server/
+/dist/.openai/
