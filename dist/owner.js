@@ -66,25 +66,34 @@
   requests=Array.isArray(result[1].requests)?result[1].requests:[];
   renderTenants();renderRequests();renderMetrics();
  }
+ function cairoToday(){
+  const parts=new Intl.DateTimeFormat('en',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const values=Object.fromEntries(parts.filter(function(part){return part.type!=='literal';}).map(function(part){return [part.type,part.value];}));
+  return values.year+'-'+values.month+'-'+values.day;
+ }
+ function cairoDateOffset(days){const date=new Date(cairoToday()+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);}
+ function subscriptionExpired(t){const end=subscriptionEnd(t);return Boolean(end&&end<cairoToday());}
+ function subscriptionExpiring(t){const end=subscriptionEnd(t);return Boolean(end&&!subscriptionExpired(t)&&end<=cairoDateOffset(30));}
  function renderMetrics(){
-  const active=tenants.filter(function(t){return t.is_active;}).length;
-  const expiring=tenants.filter(function(t){const date=t.subscription_ends_on||t.subscription_end||t.ends_on||t.subscription&&t.subscription.ends_on;return date&&Date.parse(date+'T23:59:59')<Date.now()+30*86400000;}).length;
-  $('#summary-cards').innerHTML='<article class="summary-card"><span>إجمالي العيادات</span><strong>'+tenants.length+'</strong><small>كل حسابات الأطباء على المنصة</small></article><article class="summary-card"><span>عيادات مفعّلة</span><strong>'+active+'</strong><small>تفعيل وإيقاف يدوي من لوحة المالك</small></article><article class="summary-card"><span>اشتراكات تحتاج مراجعة قريبًا</span><strong>'+expiring+'</strong><small>تاريخ الانتهاء يظهر داخل كل بطاقة</small></article>';
+  const active=tenants.filter(function(t){return t.is_active&&!subscriptionExpired(t);}).length;
+  const expiring=tenants.filter(subscriptionExpiring).length;
+  const expired=tenants.filter(function(t){const end=subscriptionEnd(t);return Boolean(end&&subscriptionExpired(t));}).length;
+  $('#summary-cards').innerHTML='<article class="summary-card"><span>إجمالي العيادات</span><strong>'+tenants.length+'</strong><small>كل حسابات الأطباء على المنصة</small></article><article class="summary-card"><span>عيادات متاحة الآن</span><strong>'+active+'</strong><small>مفعّلة واشتراكها ساري</small></article><article class="summary-card"><span>اشتراكات تنتهي خلال ٣٠ يومًا</span><strong>'+expiring+'</strong><small>تظهر مواعيدها داخل بطاقة كل عيادة</small></article><article class="summary-card"><span>اشتراكات منتهية</span><strong>'+expired+'</strong><small>الوصول يتوقف تلقائيًا بعد تاريخ القاهرة المسجل</small></article>';
  }
  function clinicHref(slug,doctor){return location.origin+'/clinic/index.html?clinic='+encodeURIComponent(slug)+(doctor?'&portal=doctor':'');}
  function subscriptionEnd(t){return t.subscription_ends_on||t.subscription_end||t.ends_on||t.subscription&&t.subscription.ends_on||'';}
  function renderTenants(){
   if(!tenants.length){$('#tenant-list').innerHTML='<div class="empty-card">لا توجد عيادات حتى الآن. أضف أول عيادة من الزر بالأعلى.</div>';return;}
   $('#tenant-list').innerHTML=tenants.map(function(t){
-   const state=t.is_active?'<span class="status-pill">مفعّلة</span>':'<span class="status-pill off">موقوفة</span>';
-   const end=subscriptionEnd(t);
+   const end=subscriptionEnd(t),expired=Boolean(end&&subscriptionExpired(t)),expiring=Boolean(end&&subscriptionExpiring(t));
+   const state=!t.is_active?'<span class="status-pill off">موقوفة يدويًا</span>':expired?'<span class="status-pill off">انتهى الاشتراك</span>':expiring?'<span class="status-pill warn">ينتهي قريبًا</span>':'<span class="status-pill">مفعّلة</span>';
    return '<article class="tenant-card"><div class="tenant-top"><div><h3>'+esc(t.name)+'</h3><div class="tenant-slug">'+esc(t.slug)+'</div></div>'+state+'</div>'+
     '<div class="tenant-meta"><span>'+esc(t.specialty||'بدون تخصص')+'</span><span>الدكتور: '+esc(t.doctor_email||'—')+'</span><span>'+Number(t.service_count||0)+' خدمة</span></div>'+
     '<div class="tenant-links"><a target="_blank" rel="noopener" href="'+esc(clinicHref(t.slug,false))+'">رابط المريض</a><a target="_blank" rel="noopener" href="'+esc(clinicHref(t.slug,true))+'">دخول الدكتور</a></div>'+
     '<div class="tenant-actions"><label class="subscription-row">نهاية الاشتراك<input type="date" value="'+esc(end)+'" data-subscription-date="'+esc(t.id)+'"></label>'+
     '<button type="button" class="button outline" data-action="save-subscription" data-id="'+esc(t.id)+'">حفظ الاشتراك</button>'+
     '<button type="button" class="button edit" data-action="edit-clinic" data-id="'+esc(t.id)+'">تعديل</button>'+
-    '<button type="button" class="button pause" data-action="toggle-active" data-id="'+esc(t.id)+'">'+(t.is_active?'إيقاف العيادة':'إعادة التفعيل')+'</button></div></article>';
+    '<button type="button" class="button pause" data-action="toggle-active" data-id="'+esc(t.id)+'">'+(t.is_active?'إيقاف يدوي':'إعادة التفعيل')+'</button></div></article>';
   }).join('');
  }
  function statusText(value){return {open:'جديد',in_progress:'قيد المتابعة',resolved:'تم الحل'}[value]||value;}

@@ -1,86 +1,73 @@
-# Phase 2 implementation and activation
+# Phase 2 — implementation, activation, and verification
 
-This extends the existing Clinic OS visual foundation. The navy/teal layout, Arabic RTL booking surface, stats, queue and tables remain. It is connected to a new Supabase project; the schema is active, but real clinic and account data have not been provisioned.
-
-The 2026-10-01 interface update adds locally bundled Arabic typography, clearer booking/service/payment information, a staff sidebar, date and status filters, patient-directory search, inline form errors, booking-reference copy, and responsive page layouts. The single-file preview embeds the font and deliberately excludes live configuration. Normal startup now fails closed when Supabase is unconfigured; fake records and simulated writes are available only through an explicit `?demo=1` preview.
-
-Supabase project `Clinic OS` now exists in organization `clinic-os` in `eu-west-1` at the reported cost of USD 0/month. The six migrations are applied, all clinic data tables have RLS enabled, the public publishable key is configured, and the role/RLS SQL integration test passed. The database is intentionally empty: no clinic tenant, doctor Auth user/membership, or real service settings have been provisioned.
+Clinic OS preserves the original navy/teal visual foundation and Arabic RTL experience. This document separates code already present from live services that still need configuration.
 
 ## Implemented
 
-| Capability | Code path / behavior |
+| Area | Current behavior |
 |---|---|
-| Doctor-controlled services | Name, category, price, duration, priority and active status; four initial demo categories; only doctor RPC can change them |
-| Payments | Cash, InstaPay, wallet; doctor-configured destinations, manual staff receipt confirmation and immutable receipt record; no automatic transfer verification |
-| Smart ETA | Current elapsed visit, configured duration, average of up to 20 completed visits after 3 samples, bounded learned duration, priority and appointment eligibility, pause, travel and arrival buffer |
-| Patient records | Tenant-scoped contact directory; staff can explicitly reuse a patient; only doctor can read clinical history, allergies, diagnosis, medications and printable prescriptions |
-| Auth and roles | Supabase staff email/password; patient phone verification using SMS OTP; membership role read from server, never self-assigned; sessions in memory with token refresh |
-| Multi-tenancy | Composite foreign keys and tenant-scoped RLS; verified custom-domain mapping or shared-domain `?clinic=slug`; doctor name/photo/address/accent |
-| Realtime | Authenticated Postgres Changes subscription with reconnect and heartbeat; RLS restricts events; 30-second refresh fallback |
-| Notifications | In-app/browser reminders while open; durable DB reminders; service-role-only delivery leases, retries and provider idempotency key through an optional webhook adapter |
-| Concurrency | Per-clinic transaction lock for bookings and queue mutations, overlap rejection, booking request idempotency, expected-current guard on next-patient action |
+| Services | Doctor-managed service name, category (normal/urgent/emergency/follow-up), price, duration, priority, and active state |
+| Booking | Public booking after phone OTP; patient tracking is by verified phone identity and does not expose appointment codes |
+| Queue and ETA | Transaction-locked booking/queue actions, arrival and triage controls, adaptive statistical estimates formatted as days/hours/minutes |
+| Clinic profile | Doctor name/photo, tagline/about, three theme presets, accent color, Google Maps link/address, work hours, buffer, and payment destinations |
+| Payment records | Cash, InstaPay, and mobile-wallet options; staff must manually confirm receipt. No card/mobile payment gateway is connected |
+| Clinical records | Tenant-scoped patient contacts; doctor-only medical history, allergies, diagnosis, notes, medications, and printable prescriptions |
+| Roles | Supabase Auth; server-side doctor/reception membership; reception cannot read clinical records or change doctor-only settings |
+| Multi-tenancy | Tenant-scoped RLS, composite foreign keys, manual clinic slugs, verified custom-domain resolution, owner provisioning and activation tools |
+| Realtime | Authenticated Postgres Changes with tenant filters, reconnect and refresh fallback |
+| Storage | Durable business records are in PostgreSQL. The active app does not write patient data or auth tokens to localStorage/sessionStorage/IndexedDB |
+| Owner portal | Create/edit clinic profile, set manual slug, configure supported service and branding fields, invite doctor, upload clinic photo, set subscription end, suspend/restore clinic, review change requests |
 
-ETA is statistical scheduling logic, **not an AI/LLM diagnosis or a trained predictive model**. Travel time is patient-entered, not live traffic. Emergencies require doctor review; they never preempt an ongoing visit automatically.
+ETA is an adaptive statistical estimate based on appointment duration, recent completed visits, service priority, queue state, and arrival buffer. It is not a trained AI model or live traffic prediction. Emergency bookings wait for doctor review; they do not automatically interrupt an ongoing visit.
 
-## Persistence and execution modes
+## Newly enforced tenant access rules
 
-| Data | PostgreSQL source of truth | Browser behavior |
+The production database now includes `private.clinic_access_enabled(clinic_id)`. It requires the clinic to be manually active and either have no subscription end date or have `ends_on` on/after the current date in `Africa/Cairo`. The guard now applies to public clinic resolution and slot availability, business-data RLS policies, queue and settings writes, clinical-record writes, media access, and reminder generation/claiming.
+
+This means the owner can stop tenant access immediately, existing logged-in staff sessions cannot keep reading clinic records, and an expired subscription stops access after its recorded Cairo-local end date. The owner dashboard shows effective availability, expiring subscriptions, and expired subscriptions separately. The owner can still inspect and renew a subscription or toggle manual activation.
+
+## Live activation state
+
+- Supabase project: `xgowtcloqiivxeqhgndr`.
+- 15 migrations are currently applied to production; six original migrations and the newly added suspension/expiry migration are in this repository.
+- Eight previously applied owner/onboarding/tenant migrations are missing from the repository. Their production migration versions also differ from older local migration filenames. Reconcile this before using Supabase CLI to rebuild a fresh environment or push migrations; do not blindly replay the older SQL.
+- The live project currently has no platform-owner account, clinic tenant, doctor membership, or real service catalog.
+- The hosted public URL is still on Site version 8 and is not automatically built from this GitHub repository. A successful GitHub Actions run does not mean the hosted URL was updated.
+- No owner email, real doctor account, SMS provider, external reminder adapter/cron, online-payment provider, or custom DNS domain is configured.
+
+## Data persistence and security boundary
+
+| Data | Source of truth | Browser behavior |
 |---|---|---|
-| Bookings and queue | `appointments`; transactional `book_appointment` and `staff_action` RPCs; older history via paginated `clinic_booking_history` | Recent queue plus authenticated historical pages are fetched from PostgreSQL |
-| Patient contacts | `patients`; created or linked by the booking RPC | Tenant-scoped, paginated reads; never saved in browser storage |
-| Payments | `payments`; written by the staff payment action alongside appointment paid state | Read through tenant/RLS-filtered booking data for the dashboard |
-| Visits and prescriptions | `medical_records` and `encounters`; doctor-only `save_encounter` RPC | Doctor-only reads; draft fields stay in the open form until saved |
-| Services and clinic settings | `services` and `clinics`; doctor-only `save_service` and `save_clinic` RPCs | Loaded from the resolved tenant and refreshed from Supabase |
-| Queue notifications | `notifications`; generated in PostgreSQL and delivered through the server dispatcher | Realtime/in-app display; no device-local notification history |
-| Auth | Supabase Auth users, phone OTP, clinic memberships | Access and refresh tokens stay in JavaScript memory; logging in again after reload is intentional |
+| Appointments and queue | `appointments`; transactional RPCs | Loaded from Supabase; short-lived in-memory rendering only |
+| Patient contacts | `patients` | Tenant-scoped, paginated reads; no browser persistence |
+| Payments | `payments` plus audited staff action | Receipt confirmation is a separate staff action |
+| Clinical records | `medical_records` and `encounters` | Doctor-only server queries and write RPC |
+| Services/profile | `services` and `clinics` | Tenant resolution and doctor/admin controls |
+| Reminders | `notifications` and delivery queue | In-app state plus optional server-side external delivery |
+| Staff/patient auth | Supabase Auth and memberships | Tokens remain in JavaScript memory and must be re-established on reload |
 
-There are no calls to `localStorage`, `sessionStorage`, or IndexedDB in the active browser app. Arrays in `stage2.js` are volatile render caches/forms or explicit demo fixtures. They are never a fallback store for the normal app.
+The publishable Supabase key is intentionally public. Never expose a service-role/secret key in client code. RLS and server-side role checks are the authorization boundary; domain names and URL slugs only resolve clinic branding.
 
-- `dist/index.html?demo=1` runs the isolated, in-memory preview with doctor/reception role switching. Never enter real records there.
-- `dist/index.html` uses the configured Supabase project. Until a published clinic and tenant slug exist, it displays a setup message and blocks bookings; it never falls back to mock records.
-- The project URL and publishable key are already configured. Connection errors disable data entry instead of silently reverting to demo.
-- `npm run ui:sync` copies this SAME interface to `public/clinic/`. The React route embeds it, preserving URL query parameters. `predev` and `prebuild` synchronize automatically. The duplicated phase-one business logic was removed.
-- Staff sessions and OTP sessions do not survive reload; this intentionally avoids storing patient data or auth tokens in localStorage.
+## Notifications and payments
 
-## Activate Supabase
+The database can create consented in-app reminders. External SMS/WhatsApp delivery requires a scheduled worker, `DISPATCH_SECRET`, a contracted HTTPS provider endpoint, provider token, and idempotent delivery receipts. None is configured now. Selecting Cash/InstaPay/wallet is not proof of payment; staff confirms receipt in the clinic portal. Online card/payment collection, automatic refunds, and reconciliation are not present.
 
-1. The current project is already created; for another environment, create or select the owner's Supabase project. Do not paste service-role keys into chat or browser files.
-2. The six migrations are already applied to this project. For a fresh project, apply them in numeric order using the Supabase CLI (`supabase db push`) or SQL Editor. Never rerun them on an already migrated database.
-3. `supabase/tests/tenant_roles.sql` passed on this project and rolls back its temporary test users and records. Run it again on disposable databases after schema changes.
-4. Create the real clinic row, service settings, and staff Auth users through administrator-controlled provisioning. Assign membership rows with `role='doctor'` or `'reception'`. There is no public role-grant endpoint. Example provisioning is in `supabase/provision.example.sql`.
-5. Create the clinic doctor in Supabase Auth, add the owner-controlled `memberships` row with `role='doctor'`, then add real clinic settings and services. Do not publish sample clinic details or prices as live data. Configure an SMS provider and abuse protection for patient phone OTP; staff use the pre-provisioned email/password account. No phone provider is configured by this code.
-6. The project HTTPS URL and **publishable key** are already in `dist/config.js`. Set `clinicSlug` after the real clinic row is provisioned. Never use secret/service-role keys. Run `npm run ui:sync` after changing config.
-7. For custom doctor domains, verify ownership using the hosting provider, then insert the exact hostname in `clinic_domains` with `verified=true`. Domain lookup chooses branding; authorization still comes from tenant RLS/membership, not the host or a browser-supplied tenant ID.
-8. Validate two clinics with doctor/reception/patient accounts, simultaneous booking/queue actions, and Realtime before enabling real appointments. The migrations and SQL tenant-role/RLS tests have run on the new Supabase project; browser and React build validation are still blocked by unavailable workspace dependencies.
+## Validation performed
 
-## Notifications
+- `supabase/tests/tenant_roles.sql` ran against the connected Supabase project and passed, then rolled back its fixture users and rows. It now checks tenant/role isolation, manual suspension, access through the subscription end date, denial the next Cairo day, and public clinic resolution.
+- The local GitHub workflow previously passed 43 checks at commit `97c8431`. This update adds two regression checks; the expected suite is 45 after CI runs.
+- The optional browser smoke test now reflects the no-booking-code journey. A real Playwright/Edge run has not been completed in this workspace.
+- Current GitHub Actions results: https://github.com/fathyelprimo-dot/clinic-os/actions
 
-Enable Supabase Cron and schedule `select public.generate_reminders();` every minute. It creates consented in-app reminders even when no browser is open. The client displays them after reconnect/login.
+## Still missing from the product
 
-For external delivery, deploy `supabase/functions/notification-dispatch` with JWT verification disabled **only because it validates its own `DISPATCH_SECRET` bearer**. Store these server-side environment secrets:
+- A page builder to edit every patient-facing string and freely reorder/show/hide all sections. Current owner controls cover only the supported clinic fields and three predefined themes.
+- Automated cancellation waitlist and one-click rebooking.
+- Configured SMS/WhatsApp provider and delivery scheduling.
+- Integrated online payment gateway and refund/reconciliation workflow.
+- Telehealth, secure patient messaging, patient-submitted forms, insurance search, public ratings/reviews, and marketplace discovery.
+- Flexible multi-shift clinic schedules; current clinic schedule is one daily opening window.
+- Production owner/doctor setup and a published Site version connected to GitHub main.
 
-- `DISPATCH_SECRET`: a random high-entropy cron credential.
-- `NOTIFICATION_WEBHOOK_URL`: your contracted HTTPS SMS/WhatsApp adapter endpoint.
-- `NOTIFICATION_WEBHOOK_TOKEN`: provider authentication.
-- Supabase server function environment supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-
-Schedule a server-side POST once per minute with `Authorization: Bearer <DISPATCH_SECRET>`. The adapter receives `{to,message,reference}` and an `Idempotency-Key`. It MUST deduplicate that key and return a non-2xx on failure. A 2xx means provider acceptance, not delivery to handset. Configure provider receipts separately if you need delivery status. No provider, cron job or real message was activated during this implementation.
-
-Only unexpired reminders (10 minutes), consented active visits, an unpaused queue, and appropriate visit states can be claimed. Leases prevent concurrent workers claiming the same message; completion requires the lease token. No diagnoses or medications are sent.
-
-## Verification and limitations
-
-- `npm run test:phase2` runs 32 domain, mocked transport, static persistence, RLS, Realtime subscription, and no-browser-storage contract checks without packages.
-- Coverage includes past-slot exclusion, clinic-closing boundaries, overlapping reservations, cancellation availability, keyset-paginated history, and the Supabase persistence boundary.
-- `node scripts/browser-smoke.mjs <output-directory>` can run the UI smoke checks in explicit demo mode with optional Playwright installed (or `CODEX_PRIMARY_RUNTIME_NODE_MODULES` pointing to the supplied runtime modules). It did not run here because the configured Microsoft Edge binary is missing.
-- `node --check dist/stage2.js` validates browser JavaScript syntax.
-- `supabase/tests/tenant_roles.sql` passed against the new Supabase database; fixture users, clinic rows, and patients were rolled back and verified absent afterward.
-- Browser visual QA is blocked because the configured Microsoft Edge binary is missing. The framework build and lint commands are blocked because `vinext` and `eslint` are not installed in this workspace.
-- Medical records are doctor-only. The initial prescription is printable for handoff; patient self-service access to clinical history is not exposed.
-- Paid-booking cancellation/refunds require a later audited refund workflow; current cancellation deliberately rejects paid appointments.
-- The patient directory reads all tenant patients in bounded pages. The fast dashboard snapshot includes recent and future bookings; selecting an older date or “all dates” loads older appointments in keyset-paginated batches. Scheduling supports one continuous daily opening window per clinic.
-- New public deployment and GitHub push are not claimed; remote activation requires access/configuration.
-
-Migration `202610010001_persistence_realtime.sql` adds tenant-filtered patient, payment and doctor-only clinical tables to Supabase Realtime while retaining RLS. Migration `202610010002_foreign_key_indexes.sql` adds covering indexes for the foreign-key access paths flagged by Supabase performance advisors. Migration `202610010003_appointment_history.sql` adds role-scoped, keyset-paginated access to older bookings without storing an archive on the device. The remaining security advisor warnings concern intentionally public reads of published clinic branding/availability and role-checked security-definer mutation RPCs; the database role test validated that reception cannot read clinical records or change doctor-only settings.
-
-Primary references used: Supabase RLS (`https://supabase.com/docs/guides/database/postgres/row-level-security`), Postgres Changes (`https://supabase.com/docs/guides/realtime/postgres-changes`), password auth (`https://supabase.com/docs/guides/auth/passwords`), and Google Maps URLs (`https://developers.google.com/maps/documentation/urls/get-started`).
+For the competitor-backed roadmap see [COMPETITIVE-BASELINE.md](COMPETITIVE-BASELINE.md). For creating tenants and managing clinics see [OWNER-PORTAL.md](OWNER-PORTAL.md).

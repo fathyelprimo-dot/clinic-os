@@ -24,7 +24,8 @@ try{
  await page.locator('#booking-form input[name=phone]').fill('01012345678');
  await page.locator('#booking-form button[type=submit]').click();
  await page.locator('#booking-success').waitFor({state:'visible'});
- const booking=await page.locator('.booking-id').textContent();assert.match(booking,/^[a-f0-9-]{36}$/);
+ assert.equal(await page.locator('#booking-success .booking-id').count(),0);
+ assert.match(await page.locator('#booking-success').innerText(),/لا تحتاج إلى رقم حجز/);
  await page.locator('[data-action=track-last]').click();
  await page.locator('#track-result .eta-box').waitFor({state:'visible'});
  await page.locator('#track-dialog [data-close]').click();

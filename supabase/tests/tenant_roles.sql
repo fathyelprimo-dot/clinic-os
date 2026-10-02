@@ -42,4 +42,49 @@ do $$begin
  begin perform * from public.patients;raise exception 'FAIL anonymous patient read';exception when insufficient_privilege then null;end;
 end$$;
 reset role;
+
+-- Owner suspension must immediately gate an existing staff session and all tenant reads.
+update public.clinics set is_active=false where id='20000000-0000-0000-0000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+do $$begin
+ if exists(select 1 from public.patients where clinic_id='20000000-0000-0000-0000-000000000001') then raise exception 'FAIL suspended clinic exposes patients';end if;
+ if exists(select 1 from public.appointments where clinic_id='20000000-0000-0000-0000-000000000001') then raise exception 'FAIL suspended clinic exposes appointments';end if;
+ begin perform public.clinic_snapshot('20000000-0000-0000-0000-000000000001');raise exception 'FAIL suspended clinic snapshot';exception when raise_exception then if sqlerrm<>'Clinic unavailable' then raise;end if;end;
+ begin perform public.staff_action('20000000-0000-0000-0000-000000000001','pause');raise exception 'FAIL suspended clinic queue mutation';exception when raise_exception then if sqlerrm<>'Staff only' then raise;end if;end;
+end$$;
+reset role;
+
+-- The Cairo-local expiry date is inclusive; access remains available on that date.
+update public.clinics set is_active=true where id='20000000-0000-0000-0000-000000000001';
+insert into public.clinic_subscriptions(clinic_id,ends_on)
+values('20000000-0000-0000-0000-000000000001',(now() at time zone 'Africa/Cairo')::date);
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+do $$begin
+ if (select count(*) from public.patients where clinic_id='20000000-0000-0000-0000-000000000001')<>1 then raise exception 'FAIL subscription expires before its Cairo end date';end if;
+ if public.save_service('20000000-0000-0000-0000-000000000001',null,'{"name":"Boundary test","category":"normal","price":100,"duration_minutes":20,"priority":0,"active":true}') is null then raise exception 'FAIL active subscription cannot save service';end if;
+end$$;
+reset role;
+
+-- The day after expiry, RLS, snapshots, queue actions and public resolution all deny access.
+update public.clinic_subscriptions
+set ends_on=(now() at time zone 'Africa/Cairo')::date-1
+where clinic_id='20000000-0000-0000-0000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',true);
+do $$begin
+ if exists(select 1 from public.patients where clinic_id='20000000-0000-0000-0000-000000000001') then raise exception 'FAIL expired clinic exposes patients';end if;
+ if exists(select 1 from public.appointments where clinic_id='20000000-0000-0000-0000-000000000001') then raise exception 'FAIL expired clinic exposes appointments';end if;
+ begin perform public.clinic_snapshot('20000000-0000-0000-0000-000000000001');raise exception 'FAIL expired clinic snapshot';exception when raise_exception then if sqlerrm<>'Clinic unavailable' then raise;end if;end;
+ begin perform public.staff_action('20000000-0000-0000-0000-000000000001','pause');raise exception 'FAIL expired clinic queue mutation';exception when raise_exception then if sqlerrm<>'Clinic unavailable' then raise;end if;end;
+ begin perform public.save_service('20000000-0000-0000-0000-000000000001',null,'{"name":"Expired test","category":"normal","price":100,"duration_minutes":20,"priority":0,"active":true}');raise exception 'FAIL expired clinic accepted a service';exception when raise_exception then if sqlerrm<>'Clinic unavailable' then raise;end if;end;
+end$$;
+reset role;
+set local role anon;
+do $$begin
+ if (select count(*) from public.clinics where slug like 'test-clinic-%')<>1 then raise exception 'FAIL expired clinic remains publicly listed';end if;
+ begin perform public.resolve_clinic('example.test','test-clinic-a');raise exception 'FAIL expired public clinic resolution';exception when raise_exception then if sqlerrm<>'Clinic unavailable' then raise;end if;end;
+end$$;
+reset role;
 rollback;

@@ -1,48 +1,52 @@
-# Clinic OS — phase 2
+# Clinic OS
 
-Existing Arabic RTL visual foundation, extended with doctor-controlled services, priority queue and ETA, clinic branding/maps, payment tracking, patient medical records and printable prescriptions, plus a Supabase Auth/RLS/Realtime implementation.
+Clinic OS is an Arabic-first, RTL clinic booking and queue product built on the existing navy/teal visual foundation. It is designed as a multi-tenant, white-label SaaS: the platform owner provisions clinics, and each clinic receives patient and doctor routes under its own slug or verified domain.
 
-**Supabase is connected to the Clinic OS project.** Its production schema, RLS policies, owner controls and public clinic-media bucket are active. No clinic tenant, platform-owner user, doctor Auth membership, or clinic services are provisioned yet, so the live clinic route shows a setup message and does not accept bookings until those records exist. The isolated, in-memory preview requires `?demo=1`. The production database has additional owner/customization migrations applied beyond the base migration files currently checked into this repository; sync those migrations before recreating production from scratch.
+## Current live-state check
 
-## Preview and tests
+- GitHub repository: https://github.com/fathyelprimo-dot/clinic-os
+- Supabase project: `xgowtcloqiivxeqhgndr`
+- The Supabase production project has 15 migrations applied, including server-side enforcement that immediately blocks tenant access when the owner suspends a clinic or its subscription has expired.
+- The database currently has no provisioned clinic tenant, platform-owner account, doctor membership, or live service catalog. The normal clinic route therefore fails closed and does not accept real bookings.
+- The hosted preview at https://clinic-os-elprimo.violaelprimo.chatgpt.site is still on version 8. It is separate from this GitHub repository and does not automatically receive commits from `main`.
+- Six base migrations are checked into this repository. Eight owner/onboarding/tenant migrations that are present in the production database are still missing from Git history. Production migration versions also differ from the old local filenames. Do not run `supabase db push` against production or use the repository to recreate a fresh database until that history is reconciled.
 
-The existing navy/teal identity now has a redesigned patient journey, service cards, tracking explanation, FAQ, and staff navigation with appointment date/status filters and patient search. A locally bundled variable Noto Sans Arabic font keeps typography available without a font CDN. Its OFL license is included in `dist/fonts/OFL.txt`.
+## Implemented product capabilities
 
-Open `dist/index.html?demo=1` in a browser to use “تجربة لوحة العيادة” and switch between doctor/reception preview roles. No installation is needed. Demo records last only in page memory; never enter real patient data in demo mode. Opening `dist/index.html` without the query loads no mock appointments or clinic records.
+- Doctor-managed visit services with normal, urgent, emergency, and follow-up categories, pricing, duration, priority, and availability.
+- Phone-verified patient bookings and tracking by verified phone identity without appointment codes.
+- A queue dashboard, arrival/triage states, concurrency-safe queue actions, and adaptive ETA shown in days, hours, and minutes.
+- Clinic profile customization, doctor photo, colors, three visual templates, Google Maps destinations, working hours, and Cash/InstaPay/mobile-wallet payment tracking.
+- Patient directory, doctor-only medical history, diagnosis, medications, and printable prescriptions.
+- Doctor/reception roles, Supabase Auth, tenant-scoped PostgreSQL RLS, Realtime updates, and no business-data persistence in browser storage.
+- Owner dashboard for manual clinic slugs, clinic/service setup, doctor invitations, activation, subscription dates, supported branding fields, photo upload, and change requests.
 
-```sh
-node scripts/test-phase2.mjs
-node scripts/sync-ui.mjs
-```
+Cash, InstaPay, and wallet payments are recorded for staff confirmation; no online card processor is connected. ETA is a statistical scheduling estimate, not medical AI or live traffic.
 
-On a machine with npm registry access:
+## What still needs activation or implementation
+
+- Provision the real platform-owner email, create the first clinic and doctor membership, and configure real services. No actual tenant or account is in the live project yet.
+- Configure Supabase phone OTP with an SMS provider. The code verifies phone identity, but the provider is not configured here.
+- Enable the database reminder schedule and configure the contracted SMS/WhatsApp delivery adapter. Browser notifications alone do not reach patients when the page is closed.
+- Buy and verify the intended domain, then configure DNS and the verified clinic-domain records.
+- The owner can edit the supported clinic/profile/service fields. A general page builder that lets the owner rewrite every page label and freely reorder every section is not implemented.
+- Online payment processing, telehealth, automated cancellation waitlists, insurance search, verified public reviews, and marketplace discovery are not connected.
+
+## Preview and local development
+
+The explicit demo uses fake in-memory records. Never enter real patient information in demo mode.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-The framework route embeds the same synchronized UI; there is one active implementation of business behavior. No separate outdated React booking flow remains.
+Open the local address printed by the dev command. Add `?demo=1` for the isolated demo. Without that query, the app requires its Supabase tenant and never falls back to fake clinic data.
 
-## Key files
+## Verification
 
-- `dist/stage2.js`: phone-verified bookings, phone-only patient tracking, staff controls, medical records, clinic customization and live/demo adapters.
-- `dist/owner.html`, `dist/owner.js`, `dist/owner.css`: authenticated owner dashboard for clinic creation, manual slugs, subscriptions, activation, service editing and change requests.
-- `dist/experience.css`: responsive visual improvements, locally hosted Arabic typography and accessible dialog styles.
-- `dist/domain.js`: service validation, Cairo dates, day/hour/minute smart ETA, Maps-link validation and directions.
-- `dist/supabase-client.js`: Supabase Auth/REST RPC and Realtime transport.
-- `dist/config.js`: **public** project URL/key and optional default clinic slug only.
-- `supabase/migrations/`: schema, RLS, authenticated RPC, transactional queue and notification delivery.
-- `supabase/tests/tenant_roles.sql`: database tenant/role tests, ready to run on a disposable Supabase project.
-- `supabase/functions/clinic-platform-admin/` and `clinic-owner-bootstrap/`: JWT-verified owner operations and allowlisted owner invitation.
-- `supabase/functions/notification-dispatch/`: optional external provider adapter, server secrets only.
-- `docs/OWNER-PORTAL.md`: owner sign-in, clinic URLs, uploads and domain setup notes.
-- `docs/PHASE2.md`: setup, provisioning, notification contract and actual validation limits.
+- `node scripts/test-phase2.mjs` runs 45 domain, transport, UI-contract, persistence, and owner-dashboard checks.
+- `supabase/tests/tenant_roles.sql` includes the tenant-isolation suite plus new checks for manual suspension, subscription-expiry boundaries in Cairo time, and public clinic resolution. It passed against the connected database and rolls its fixture data back.
+- `node scripts/browser-smoke.mjs <output-directory>` is an optional real-browser smoke test. It requires Playwright and Microsoft Edge.
 
-All durable clinic data is in Supabase PostgreSQL. Recent appointments and the queue load at sign-in; older appointments and payments load through authenticated, bounded pages. Browser arrays are short-lived UI caches of database responses, form drafts, or isolated demo fixtures; the application never writes business records or auth tokens to `localStorage`, `sessionStorage`, or IndexedDB. Patients are fetched in pages, bookings and queue actions go through transactional RPCs, and each tenant table is protected by RLS.
-
-Cash, InstaPay and wallet receipts require manual staff confirmation. Selecting a payment method never marks a booking paid. ETA is an adaptive statistical estimate; it is not a medical AI or a traffic prediction service.
-
-Supabase project dashboard: https://supabase.com/dashboard/project/xgowtcloqiivxeqhgndr. The project is empty by design until the clinic profile, real doctor Auth user/membership, and doctor-selected services are provisioned.
-
-43 domain, transport and owner-contract checks are defined in `scripts/test-phase2.mjs`. Run them with Node on the checked-out repository; RLS and browser checks still require the connected Supabase and browser runtimes.
+See [START-HERE-AR.md](START-HERE-AR.md), [docs/PHASE2.md](docs/PHASE2.md), [docs/OWNER-PORTAL.md](docs/OWNER-PORTAL.md), and [docs/COMPETITIVE-BASELINE.md](docs/COMPETITIVE-BASELINE.md).
