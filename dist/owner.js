@@ -104,7 +104,6 @@
     '<button type="button" class="button pause" data-action="toggle-active" data-id="'+esc(t.id)+'">'+(t.is_active?'إيقاف يدوي':'إعادة التفعيل')+'</button></div></article>';
   }).join('');
  }
- function statusText(value){return {open:'جديد',in_progress:'قيد المتابعة',resolved:'تم الحل'}[value]||value;}
  function renderRequests(){
   if(!requests.length){$('#request-list').innerHTML='<div class="empty-card">لا توجد طلبات تعديل.</div>';return;}
   $('#request-list').innerHTML=requests.map(function(r){
