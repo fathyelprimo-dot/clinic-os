@@ -29,12 +29,7 @@
  async function sendOwnerLink(email){
   if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
   const redirect=location.origin+'/owner.html?owner=1';
-  return authRequest('/auth/v1/otp?redirect_to='+encodeURIComponent(redirect),{email:email,create_user:false});
- }
- async function requestOwnerActivation(email){
-  if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
-  const response=await fetch(base+'/functions/v1/clinic-owner-bootstrap',{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify({email:email})});
-  if(!response.ok)throw Error('تعذر إرسال طلب التفعيل. افتح لوحة المالك من النطاق المنشور ثم حاول مرة أخرى.');
+  return authRequest('/auth/v1/recover?redirect_to='+encodeURIComponent(redirect),{email:email});
  }
  async function signInWithPassword(email,password){
   if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
@@ -43,11 +38,11 @@
   await claimAndLoad();
  }
  async function updateOwnerPassword(password){
-  if(!session)throw Error('افتح رابط التفعيل من بريدك أولًا.');
+  if(!session)throw Error('افتح رابط استعادة كلمة المرور أو سجّل الدخول أولًا.');
   if(session.expires_at*1000<Date.now()+60000)await refreshSession();
   const response=await fetch(base+'/auth/v1/user',{method:'PUT',headers:{apikey:key,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({password:password})});
   const data=await response.json().catch(function(){return null;});
-  if(!response.ok)throw Error(data&&data.msg==='weak_password'?'اختار كلمة مرور أقوى.':'تعذر تغيير كلمة المرور. أعد فتح رابط التفعيل وحاول مرة أخرى.');
+  if(!response.ok)throw Error(data&&data.msg==='weak_password'?'اختار كلمة مرور أقوى.':'تعذر تغيير كلمة المرور. سجّل الدخول من جديد وحاول مرة أخرى.');
  }
  function captureLinkSession(){
   const params=new URLSearchParams(location.hash.replace(/^#/,''));
@@ -211,7 +206,7 @@
  $('#email-form').addEventListener('submit',function(event){
   event.preventDefault();const email=$('#owner-email').value.trim().toLowerCase();
   say('جارٍ طلب رابط دخول آمن…');
-  run(async function(){await sendOwnerLink(email);say('لو البريد مسجل ومفعّل، هيوصلك رابط دخول آمن. افتح الرابط على نفس الموقع لإكمال التحقق.');});
+  run(async function(){await sendOwnerLink(email);say('لو الحساب موجود، هيوصلك رابط آمن لتعيين أو استعادة كلمة المرور. راجع البريد الوارد والرسائل غير المرغوب فيها.');});
  });
  $('#password-login').addEventListener('click',function(){
   const email=$('#owner-email').value.trim().toLowerCase(),password=$('#owner-password').value;
@@ -226,11 +221,6 @@
   if(password!==confirmation){message.textContent='كلمتا المرور غير متطابقتين.';message.classList.add('error');return;}
   message.textContent='جارٍ حفظ كلمة المرور…';message.classList.remove('error');
   run(async function(){try{await updateOwnerPassword(password);$('#password-form').reset();message.textContent='تم حفظ كلمة المرور. يمكنك استخدامها في تسجيل الدخول القادم.';message.classList.remove('error');}catch(error){message.textContent=error.message||'تعذر حفظ كلمة المرور.';message.classList.add('error');}});
- });
- $('#bootstrap-owner').addEventListener('click',function(){
-  const email=$('#owner-email').value.trim().toLowerCase();if(!email){say('اكتب بريد المالك أولًا.',true);return;}
-  say('جارٍ طلب تفعيل وصول المالك…');
-  run(async function(){await requestOwnerActivation(email);say('لو البريد مُضاف لقائمة المالكين المسموح بها، هيوصلك رابط تفعيل. راجع البريد الوارد والرسائل غير المرغوب فيها.');});
  });
  $('#logout').addEventListener('click',function(){
   run(async function(){if(session)await fetch(base+'/auth/v1/logout',{method:'POST',headers:{apikey:key,Authorization:'Bearer '+session.access_token}}).catch(function(){});showLogin();say('تم تسجيل الخروج.');});
