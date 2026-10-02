@@ -25,7 +25,7 @@
     <section id="login-panel" class="auth-panel" aria-labelledby="login-title">
       <div class="step-kicker"><span>01</span> وصول آمن للمالك</div>
       <h1 id="login-title">أدر عياداتك من مكان واحد</h1>
-      <p class="lead">سجّل الدخول برابط آمن يصل إلى بريدك. لا تستخدم كلمة مرور مشتركة أو ضعيفة.</p>
+      <p class="lead">فعّل حسابك برابط البريد أول مرة، وبعدها يمكنك الدخول بالبريد وكلمة المرور.</p>
       <form id="email-form" class="email-form">
         <label for="owner-email">بريد المالك الإلكتروني</label>
         <input id="owner-email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="name@example.com" dir="ltr">
@@ -34,6 +34,11 @@
           <button class="button outline" id="bootstrap-owner" type="button">طلب تفعيل حساب المالك</button>
         </div>
       </form>
+      <div class="email-form password-entry">
+        <label for="owner-password">كلمة المرور</label>
+        <input id="owner-password" type="password" autocomplete="current-password" dir="ltr">
+        <button class="button outline" id="password-login" type="button">تسجيل الدخول بالبريد وكلمة المرور</button>
+      </div>
       <p id="auth-message" class="message" role="status" aria-live="polite"></p>
       <p class="privacy-note">لا تظهر بيانات العيادات إلا بعد التحقق من صلاحية حساب المالك على Supabase.</p>
     </section>
@@ -47,6 +52,17 @@
         </div>
         <div class="owner-session"><span class="pulse"></span><span id="owner-email-label"></span></div>
       </div>
+
+      <details class="panel password-settings">
+        <summary>تعيين أو تغيير كلمة المرور</summary>
+        <p class="panel-intro">بعد تفعيل البريد، عيّن كلمة مرور جديدة وفريدة لا تقل عن ١٤ حرفًا.</p>
+        <form id="password-form" class="email-form">
+          <label for="new-owner-password">كلمة المرور الجديدة<input id="new-owner-password" type="password" autocomplete="new-password" minlength="14" required dir="ltr"></label>
+          <label for="confirm-owner-password">تأكيد كلمة المرور<input id="confirm-owner-password" type="password" autocomplete="new-password" minlength="14" required dir="ltr"></label>
+          <div class="button-row"><button class="button primary" type="submit">حفظ كلمة المرور</button></div>
+        </form>
+        <p id="password-message" class="message" role="status" aria-live="polite"></p>
+      </details>
 
       <div id="summary-cards" class="summary-grid" aria-live="polite"></div>
 
