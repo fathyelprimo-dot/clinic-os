@@ -324,9 +324,9 @@ Deno.serve(async (request: Request) => {
       return reply(400, { error: "كلمة المرور الأولية يجب أن تكون من ١٢ إلى ١٢٨ حرفًا." });
     }
 
-    const doctorEmail = typeof clinic.doctor_email === "string" ? clinic.doctor_email.trim().toLowerCase() : "";
+    const doctorEmail = normalizeEmail(clinic.doctor_email);
     const doctorName = typeof clinic.doctor_name === "string" ? clinic.doctor_name.trim() : "";
-    if (!doctorEmail || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(doctorEmail)) {
+    if (!doctorEmail || !doctorEmail.includes("@") || doctorEmail.startsWith("@") || doctorEmail.endsWith("@")) {
       return reply(400, { error: "اكتب بريد الدكتور الإلكتروني بشكل صحيح." });
     }
     if (doctorName.length < 2 || doctorName.length > 100) {
