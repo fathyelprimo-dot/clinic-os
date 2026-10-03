@@ -37,7 +37,7 @@
  }
  async function sendOwnerLink(email){
   if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
-  const redirect=location.origin+'/owner.html?owner=1';
+  const redirect=location.origin+'/owner.html';
   return authRequest('/auth/v1/recover?redirect_to='+encodeURIComponent(redirect),{email:email});
  }
  async function signInWithPassword(email,password){
@@ -56,10 +56,14 @@
  function captureLinkSession(){
   const params=new URLSearchParams(location.hash.replace(/^#/,''));
   const access=params.get('access_token'),refresh=params.get('refresh_token');
-  if(params.get('error_description'))throw Error('رابط الدعوة انتهت صلاحيته أو لم يعد صالحًا. اطلب رابطًا جديدًا.');
+  const errorDescription=params.get('error_description');
+  if(errorDescription){
+   history.replaceState({},document.title,location.pathname);
+   throw Error('رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابط Forget Password جديدًا.');
+  }
   if(!access||!refresh)return false;
   setSession({access_token:access,refresh_token:refresh,expires_in:params.get('expires_in'),token_type:params.get('token_type')});
-  history.replaceState({},document.title,location.pathname+'?owner=1');
+  history.replaceState({},document.title,location.pathname);
   return true;
  }
  function showDashboard(email){
