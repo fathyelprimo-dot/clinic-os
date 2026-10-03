@@ -16,6 +16,9 @@
     "predev": "node scripts/sync-ui.mjs",
     "prebuild": "node scripts/sync-ui.mjs",
     "test:phase2": "node scripts/test-phase2.mjs",
+    "test:patient-db": "node scripts/test-patient-db.mjs",
+    "test:patient-services": "node scripts/test-patient-services.mjs",
+    "test:patient-browser": "node scripts/test-patient-browser.mjs",
     "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
@@ -47,6 +50,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@electric-sql/pglite": "0.3.14",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",

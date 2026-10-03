@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {createRequire} from 'node:module';
-import {pathToFileURL} from 'node:url';
+import fs from 'node:fs';
+import {testServer} from './test-static-server.mjs';
 const require=createRequire(import.meta.url);
 let chromium;
 try{({chromium}=require('playwright'));}catch(error){const runtime=process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES;if(!runtime)throw new Error('Install optional Playwright or set CODEX_PRIMARY_RUNTIME_NODE_MODULES before running browser checks.',{cause:error});({chromium}=require(path.join(runtime,'playwright')));}
 const output=process.argv[2]||process.env.TEMP;
+fs.mkdirSync(output,{recursive:true});
+const server=await testServer('dist');
 const browser=await chromium.launch({headless:true,channel:'msedge'});
 const page=await browser.newPage({viewport:{width:1440,height:1050}});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
- await page.goto(pathToFileURL(path.resolve('dist/index.html')).href+'?demo=1');
+ await page.goto(server.url+'/index.html?demo=1');
  await page.waitForFunction(()=>document.querySelector('#service-select')?.options.length===4);
  await page.evaluate(()=>document.fonts.ready);assert.ok(await page.evaluate(()=>document.fonts.check('16px ClinicArabic')),'Bundled Arabic font loaded');
  for(const width of [1440,1280,768,390,320]){
@@ -59,4 +62,4 @@ try{
  await page.locator('#view-toggle').click();
  await page.screenshot({path:path.join(output,'clinic-os-patient.png'),fullPage:true});
  assert.deepEqual(errors,[]);console.log('PASS font, responsive layouts, booking, tracking, payments navigation, service editing, medical record and reception visibility.');
-}finally{await browser.close();}
+}finally{await browser.close();await server.close();}

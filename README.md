@@ -14,20 +14,20 @@ Clinic OS is an Arabic-first, RTL clinic booking and queue product built on the 
 ## Implemented product capabilities
 
 - Doctor-managed visit services with normal, urgent, emergency, and follow-up categories, pricing, duration, priority, and availability.
-- Phone-verified patient bookings and tracking by verified phone identity without appointment codes.
+- Direct phone-number patient booking without SMS, private booking tracking links, and separate existing verified-phone tracking.
 - A queue dashboard, arrival/triage states, concurrency-safe queue actions, and adaptive ETA shown in days, hours, and minutes.
 - Clinic profile customization, doctor photo, colors, three visual templates, Google Maps destinations, working hours, and Cash/InstaPay/mobile-wallet payment tracking.
 - Patient directory, doctor-only medical history, diagnosis, medications, and printable prescriptions.
 - Doctor/reception roles, Supabase Auth, tenant-scoped PostgreSQL RLS, Realtime updates, and no business-data persistence in browser storage.
-- Owner dashboard for manual clinic slugs, clinic/service setup, doctor invitations, activation, subscription dates, supported branding fields, photo upload, and change requests.
+- Owner dashboard for manual clinic slugs, clinic/service setup, initial doctor passwords, activation, subscription dates, supported branding fields, photo upload, and change requests.
 
 Cash, InstaPay, and wallet payments are recorded for staff confirmation; no online card processor is connected. ETA is a statistical scheduling estimate, not medical AI or live traffic.
 
 ## What still needs activation or implementation
 
 - The owner's email is allowlisted. Open `/owner.html`, choose «طلب تفعيل حساب المالك», and complete the secure email invitation/claim. Then create the first clinic and doctor membership and configure real services.
-- Configure Supabase phone OTP with an SMS provider. The code verifies phone identity, but the provider is not configured here.
-- Enable the database reminder schedule and configure the contracted SMS/WhatsApp delivery adapter. Browser notifications alone do not reach patients when the page is closed.
+- Configure phone OTP only if retaining the existing verified-phone history flow; the new patient booking path does not use it.
+- Configure VAPID, the notification dispatcher schedule, SMTP and Auth redirect URLs as described in [the local setup guide](docs/PATIENT-PUSH-AUTH-SETUP.md). Web Push now uses the existing delivery queue and a Service Worker; real delivery still requires external configuration and device testing.
 - Buy and verify the intended domain, then configure DNS and the verified clinic-domain records.
 - The owner can edit the supported clinic/profile/service fields. A general page builder that lets the owner rewrite every page label and freely reorder every section is not implemented.
 - Online payment processing, telehealth, automated cancellation waitlists, insurance search, verified public reviews, and marketplace discovery are not connected.

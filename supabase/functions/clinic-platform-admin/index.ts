@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.99.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -254,30 +254,19 @@ Deno.serve(async (request: Request) => {
     }
     const doctorEmail = cleanEmail(clinic.doctor_email);
     const doctorName = typeof clinic.doctor_name === "string" ? clinic.doctor_name.trim() : "";
-    const origin = request.headers.get("Origin");
-    let siteOrigin: string;
-    try {
-      const parsedOrigin = new URL(origin || "");
-      if (parsedOrigin.protocol !== "https:" && parsedOrigin.hostname !== "localhost") {
-        return reply(400, { error: "رابط الدعوة لازم يكون HTTPS." });
-      }
-      siteOrigin = parsedOrigin.origin;
-    } catch {
-      return reply(400, { error: "رابط الموقع غير صالح لإرسال الدعوة." });
-    }
     if (!doctorEmail || doctorName.length < 2 || doctorName.length > 100) {
       return reply(400, { error: "اكتب اسم الدكتور وبريده الإلكتروني." });
     }
-    const invitationRedirect = new URL("/clinic/index.html", siteOrigin);
-    invitationRedirect.searchParams.set("clinic", String(clinic.slug || ""));
-    invitationRedirect.searchParams.set("portal", "doctor");
-
-    // Create an invitation first. If the database transaction fails, remove this
-    // newly-created auth user so no unused account remains behind.
+    const initialPassword = typeof input.initial_password === 'string' ? input.initial_password : '';
+    if (initialPassword.length < 12 || initialPassword.length > 128) {
+      return reply(400, { error: 'كلمة المرور الأولية يجب أن تكون من ١٢ إلى ١٢٨ حرفًا.' });
+    }
+    // The owner is authenticated above. Never update an existing email account:
+    // it may belong to a different clinic or another platform role.
     const { data: invitation, error: inviteError } =
-      await admin.auth.admin.inviteUserByEmail(doctorEmail, {
-        data: { full_name: doctorName },
-        redirectTo: invitationRedirect.toString(),
+      await admin.auth.admin.createUser({
+        email: doctorEmail, password: initialPassword, email_confirm: true,
+        user_metadata: { full_name: doctorName },
       });
     if (inviteError || !invitation.user) {
       if (inviteError?.message?.toLowerCase().includes("redirect")) {
@@ -286,10 +275,15 @@ Deno.serve(async (request: Request) => {
       return reply(400, {
         error: inviteError?.message?.toLowerCase().includes("already")
           ? "بريد الدكتور مسجّل بالفعل. استخدم دعوة جديدة ببريد غير مستخدم."
-          : "تعذر إرسال دعوة الدكتور. راجع إعدادات البريد في Supabase.",
+          : "تعذر إنشاء حساب الدكتور. راجع سياسة كلمات المرور في Supabase.",
       });
     }
 
+    const { error: requirementError } = await admin.from('doctor_password_requirements').insert({ user_id: invitation.user.id, required: true });
+    if (requirementError) {
+      await admin.auth.admin.deleteUser(invitation.user.id);
+      return reply(503, { error: 'تعذر تأمين الحساب الجديد. لم تتم إضافة العيادة.' });
+    }
     const { data, error } = await admin.rpc("platform_admin_create_tenant_pending", {
       p_admin_user_id: userId,
       p_doctor_user_id: invitation.user.id,
@@ -306,9 +300,9 @@ Deno.serve(async (request: Request) => {
       console.error("Tenant creation failed:", message);
       return reply(400, { error: "لم تكتمل إضافة العيادة. راجع الحقول وحاول مرة أخرى." });
     }
-    return reply(201, { tenant: data, invite_sent: true, activation_status: "pending" });
-  } catch (error) {
-    console.error("Platform admin request failed:", error);
+    return reply(201, { tenant: data, account_created: true, activation_status: "pending" });
+  } catch {
+    console.error("Platform admin request failed.");
     return reply(500, { error: "حدث عطل مؤقت. حاول مرة أخرى." });
   }
 });

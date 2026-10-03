@@ -5,7 +5,7 @@
  const key=config.publishableKey||'';
  const $=function(selector,root){return (root||document).querySelector(selector);};
  const $$=function(selector,root){return Array.from((root||document).querySelectorAll(selector));};
- let session=null,tenants=[],requests=[],editingClinic=null,toastTimer=null;
+ let session=null,tenants=[],requests=[],doctorRequests=[],editingClinic=null,toastTimer=null;
  const defaults=[
   {name:'كشف عادي',category:'normal',price:350,duration_minutes:20,priority:0,active:true},
   {name:'كشف مستعجل',category:'urgent',price:500,duration_minutes:20,priority:10,active:true},
@@ -16,7 +16,7 @@
  function say(message,error){const node=$('#auth-message');node.textContent=message||'';node.classList.toggle('error',Boolean(error));}
  function toast(message){const node=$('#toast');node.textContent=message;node.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(function(){node.hidden=true;},4200);}
  function setSession(data){if(!data||!data.access_token||!data.refresh_token)throw Error('تعذر استلام جلسة آمنة. افتح رابط الدخول الأخير مرة أخرى.');session={access_token:data.access_token,refresh_token:data.refresh_token,expires_at:data.expires_at||Math.floor(Date.now()/1000)+Number(data.expires_in||3600),user:data.user||null};}
- async function authRequest(path,body){const response=await fetch(base+path,{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json().catch(function(){return null;});if(!response.ok)throw Error(data&&data.msg==='Invalid login credentials'?'راجع البريد الإلكتروني أو أرسل رابط دخول جديد.':'تعذر إكمال تسجيل الدخول. تحقق من البريد والإعدادات وحاول مرة أخرى.');return data;}
+ async function authRequest(path,body){const response=await fetch(base+path,{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json().catch(function(){return null;});if(!response.ok)throw Error(data&&data.msg==='Invalid login credentials'?'البريد الإلكتروني أو كلمة المرور غير صحيحة.':'تعذر إكمال تسجيل الدخول. تحقق من البريد والإعدادات وحاول مرة أخرى.');return data;}
  async function refreshSession(){if(!session||!session.refresh_token)throw Error('انتهت الجلسة. سجّل الدخول مرة أخرى.');const data=await authRequest('/auth/v1/token?grant_type=refresh_token',{refresh_token:session.refresh_token});setSession(data);}
  async function ownerAction(action,payload){
   if(!session)throw Error('سجّل الدخول برابط المالك أولًا.');
@@ -29,12 +29,20 @@
  async function sendOwnerLink(email){
   if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
   const redirect=location.origin+'/owner.html?owner=1';
-  return authRequest('/auth/v1/otp?redirect_to='+encodeURIComponent(redirect),{email:email,create_user:false});
+  return authRequest('/auth/v1/recover?redirect_to='+encodeURIComponent(redirect),{email:email});
  }
- async function requestOwnerActivation(email){
+ async function signInWithPassword(email,password){
   if(!base||!key)throw Error('إعداد Supabase غير موجود في نسخة الموقع.');
-  const response=await fetch(base+'/functions/v1/clinic-owner-bootstrap',{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify({email:email})});
-  if(!response.ok)throw Error('تعذر إرسال طلب التفعيل. افتح لوحة المالك من النطاق المنشور ثم حاول مرة أخرى.');
+  const data=await authRequest('/auth/v1/token?grant_type=password',{email:email,password:password});
+  setSession(data);
+  await claimAndLoad();
+ }
+ async function updateOwnerPassword(password){
+  if(!session)throw Error('افتح رابط استعادة كلمة المرور أو سجّل الدخول أولًا.');
+  if(session.expires_at*1000<Date.now()+60000)await refreshSession();
+  const response=await fetch(base+'/auth/v1/user',{method:'PUT',headers:{apikey:key,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({password:password})});
+  const data=await response.json().catch(function(){return null;});
+  if(!response.ok)throw Error(data&&data.msg==='weak_password'?'اختار كلمة مرور أقوى.':'تعذر تغيير كلمة المرور. سجّل الدخول من جديد وحاول مرة أخرى.');
  }
  function captureLinkSession(){
   const params=new URLSearchParams(location.hash.replace(/^#/,''));
@@ -61,10 +69,11 @@
   }catch(error){showLogin();say(error.message||'تعذر التحقق من حساب المالك.',true);}
  }
  async function loadDashboard(){
-  const result=await Promise.all([ownerAction('list-tenants'),ownerAction('list-change-requests')]);
+  const result=await Promise.all([ownerAction('list-tenants'),ownerAction('list-change-requests'),ownerAction('list-doctor-activation-requests')]);
   tenants=Array.isArray(result[0].tenants)?result[0].tenants:[];
   requests=Array.isArray(result[1].requests)?result[1].requests:[];
-  renderTenants();renderRequests();renderMetrics();
+  doctorRequests=Array.isArray(result[2].requests)?result[2].requests:[];
+  renderTenants();renderRequests();renderDoctorActivationRequests();renderMetrics();
  }
  function cairoToday(){
   const parts=new Intl.DateTimeFormat('en',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
@@ -86,7 +95,7 @@
   if(!tenants.length){$('#tenant-list').innerHTML='<div class="empty-card">لا توجد عيادات حتى الآن. أضف أول عيادة من الزر بالأعلى.</div>';return;}
   $('#tenant-list').innerHTML=tenants.map(function(t){
    const end=subscriptionEnd(t),expired=Boolean(end&&subscriptionExpired(t)),expiring=Boolean(end&&subscriptionExpiring(t));
-   const state=!t.is_active?'<span class="status-pill off">موقوفة يدويًا</span>':expired?'<span class="status-pill off">انتهى الاشتراك</span>':expiring?'<span class="status-pill warn">ينتهي قريبًا</span>':'<span class="status-pill">مفعّلة</span>';
+   const activation=doctorRequests.find(function(r){return r.clinic_id===t.id;}),activationPending=activation&&activation.status==='pending';const state=activationPending?'<span class="status-pill warn">بانتظار قرار المالك</span>':!t.is_active?'<span class="status-pill off">موقوفة يدويًا</span>':expired?'<span class="status-pill off">انتهى الاشتراك</span>':expiring?'<span class="status-pill warn">ينتهي قريبًا</span>':'<span class="status-pill">مفعّلة</span>';
    return '<article class="tenant-card"><div class="tenant-top"><div><h3>'+esc(t.name)+'</h3><div class="tenant-slug">'+esc(t.slug)+'</div></div>'+state+'</div>'+
     '<div class="tenant-meta"><span>'+esc(t.specialty||'بدون تخصص')+'</span><span>الدكتور: '+esc(t.doctor_email||'—')+'</span><span>'+Number(t.service_count||0)+' خدمة</span></div>'+
     '<div class="tenant-links"><a target="_blank" rel="noopener" href="'+esc(clinicHref(t.slug,false))+'">رابط المريض</a><a target="_blank" rel="noopener" href="'+esc(clinicHref(t.slug,true))+'">دخول الدكتور</a></div>'+
@@ -104,10 +113,19 @@
     '<label>ملاحظة المالك<textarea class="request-note" data-request-note maxlength="4000">'+esc(r.owner_note||'')+'</textarea></label><button class="button outline" type="button" data-action="save-request" data-id="'+esc(r.id)+'">حفظ حالة الطلب</button></div></article>';
   }).join('');
  }
+ function renderDoctorActivationRequests(){
+  if(!doctorRequests.length){$('#doctor-activation-list').innerHTML='<div class="empty-card">لا توجد طلبات تفعيل أطباء بانتظار المراجعة.</div>';return;}
+  $('#doctor-activation-list').innerHTML=doctorRequests.map(function(r){
+   const label=r.status==='pending'?'بانتظار قرارك':r.status==='approved'?'تم القبول والتفعيل':'تم الرفض';
+   const badge=r.status==='approved'?'':' off';
+   const actions=r.status==='pending'?'<div class="activation-actions"><button class="button primary" type="button" data-action="decide-doctor-activation" data-decision="approve" data-id="'+esc(r.id)+'">قبول وتفعيل</button><button class="button outline" type="button" data-action="decide-doctor-activation" data-decision="reject" data-id="'+esc(r.id)+'">رفض طلب التفعيل</button></div>':'';
+   return '<article class="request-card"><div class="request-meta">'+esc(r.clinic_name)+' · '+esc(r.doctor_email||'')+' · '+esc(r.requested_at?new Date(r.requested_at).toLocaleDateString('ar-EG'):'')+'</div><h3>'+esc(r.doctor_name)+'</h3><p>'+esc(r.clinic_slug)+'</p><span class="status-pill'+badge+'">'+label+'</span>'+actions+'</article>';
+  }).join('');
+ }
  function addServiceRow(service){
   const item=service||{name:'',category:'normal',price:0,duration_minutes:20,priority:0,active:true};
   const row=document.createElement('div');row.className='service-editor-row';row.dataset.serviceRow='true';row.dataset.serviceId=item.id||'';
-  row.innerHTML='<label>اسم الخدمة<input data-field="name" maxlength="80" required value="'+esc(item.name)+'"></label><label>النوع<select data-field="category"><option value="normal">عادي</option><option value="urgent">مستعجل</option><option value="emergency">طوارئ</option><option value="followup">متابعة</option></select></label><label>السعر<input data-field="price" type="number" min="0" max="100000" step="0.01" required value="'+esc(item.price)+'"></label><label>المدة بالدقائق<input data-field="duration_minutes" type="number" min="5" max="180" required value="'+esc(item.duration_minutes)+'"></label><label>الأولوية<input data-field="priority" type="number" min="0" max="100" required value="'+esc(item.priority)+'"></label><label>الحالة<select data-field="active"><option value="true">متاحة</option><option value="false">موقوفة</option></select></label><button class="remove" type="button" data-remove-service aria-label="حذف الخدمة">×</button>';
+  row.innerHTML='<label><span>اسم الخدمة<span class="required-mark" aria-hidden="true">*</span></span><input data-field="name" maxlength="80" required value="'+esc(item.name)+'"></label><label>النوع<select data-field="category"><option value="normal">عادي</option><option value="urgent">مستعجل</option><option value="emergency">طوارئ</option><option value="followup">متابعة</option></select></label><label><span>السعر<span class="required-mark" aria-hidden="true">*</span></span><input data-field="price" type="number" min="0" max="100000" step="0.01" required value="'+esc(item.price)+'"></label><label><span>المدة بالدقائق<span class="required-mark" aria-hidden="true">*</span></span><input data-field="duration_minutes" type="number" min="5" max="180" required value="'+esc(item.duration_minutes)+'"></label><label><span>الأولوية<span class="required-mark" aria-hidden="true">*</span></span><input data-field="priority" type="number" min="0" max="100" required value="'+esc(item.priority)+'"></label><label>الحالة<select data-field="active"><option value="true">متاحة</option><option value="false">موقوفة</option></select></label><button class="remove" type="button" data-remove-service aria-label="حذف الخدمة">×</button>';
   $('#service-rows').appendChild(row);row.querySelector('[data-field=category]').value=item.category||'normal';row.querySelector('[data-field=active]').value=String(item.active!==false);
  }
  function readServices(){
@@ -163,11 +181,11 @@
     await ownerAction('update-clinic',{clinic_id:editingClinic.id,clinic:payload,services:services});
     toast('تم حفظ إعدادات العيادة والخدمات.');
    }else{
-    const created=await ownerAction('create-tenant',{clinic:payload,services:services});
+    let created;try{created=await ownerAction('create-tenant',{clinic:payload,services:services,initial_password:f.initial_password.value});}finally{f.initial_password.value='';}
     const id=created.tenant&&created.tenant.id;
-    if(!id)throw Error('تمت الدعوة لكن تعذر تأكيد رقم العيادة. حدّث القائمة قبل المحاولة مرة أخرى.');
+    if(!id)throw Error('أُنشئ الحساب لكن تعذر تأكيد رقم العيادة. حدّث القائمة قبل المحاولة مرة أخرى.');
     await ownerAction('update-clinic',{clinic_id:id,clinic:payload,services:services});
-    toast('أُنشئت العيادة وأُرسلت دعوة الدكتور إلى بريده.');
+    toast('أُنشئ حساب الدكتور بكلمة مرور أولية، والعيادة بانتظار موافقة التفعيل.');
    }
    resetClinicForm();await loadDashboard();
   }catch(errorValue){error.textContent=errorValue.message||'تعذر حفظ العيادة.';error.hidden=false;error.scrollIntoView({block:'nearest'});}
@@ -175,7 +193,7 @@
  async function doTenantAction(button){
   const id=button.dataset.id,tenant=tenants.find(function(t){return t.id===id;});if(!tenant)return;
   if(button.dataset.action==='edit-clinic'){showClinicForm(tenant);return;}
-  if(button.dataset.action==='toggle-active'){
+  if(button.dataset.action==='toggle-active'){if(!tenant.is_active&&doctorRequests.some(function(r){return r.clinic_id===id&&r.status==='pending';}))throw Error('راجع طلب تفعيل الطبيب واختر القبول أو الرفض أولًا.');
    const isActive=!tenant.is_active;
    await ownerAction('set-clinic-active',{clinic_id:id,is_active:isActive});
    toast(isActive?'تمت إعادة تفعيل العيادة.':'تم إيقاف العيادة.');await loadDashboard();return;
@@ -191,18 +209,34 @@
   await ownerAction('update-change-request',{request_id:id,status:$('[data-request-status]',card).value,owner_note:$('[data-request-note]',card).value.trim()});
   toast('تم حفظ حالة الطلب.');await loadDashboard();
  }
+ async function doDoctorActivationAction(button){
+  const decision=button.dataset.decision;
+  if(decision==='reject'&&!window.confirm('هل تريد رفض طلب التفعيل وإبقاء العيادة غير مفعلة؟'))return;
+  await ownerAction('decide-doctor-activation',{request_id:button.dataset.id,decision:decision});
+  toast(decision==='approve'?'تم قبول الطلب وتفعيل العيادة.':'تم رفض طلب التفعيل وبقيت العيادة غير مفعلة.');
+  await loadDashboard();
+ }
  async function run(action){
   try{await action();}catch(error){toast(error.message||'تعذر إتمام العملية.');}
  }
  $('#email-form').addEventListener('submit',function(event){
   event.preventDefault();const email=$('#owner-email').value.trim().toLowerCase();
   say('جارٍ طلب رابط دخول آمن…');
-  run(async function(){await sendOwnerLink(email);say('لو البريد مسجل ومفعّل، هيوصلك رابط دخول آمن. افتح الرابط على نفس الموقع لإكمال التحقق.');});
+  run(async function(){await sendOwnerLink(email);say('لو الحساب موجود، هيوصلك رابط آمن لتعيين أو استعادة كلمة المرور. راجع البريد الوارد والرسائل غير المرغوب فيها.');});
  });
- $('#bootstrap-owner').addEventListener('click',function(){
-  const email=$('#owner-email').value.trim().toLowerCase();if(!email){say('اكتب بريد المالك أولًا.',true);return;}
-  say('جارٍ طلب تفعيل وصول المالك…');
-  run(async function(){await requestOwnerActivation(email);say('لو البريد مُضاف لقائمة المالكين المسموح بها، هيوصلك رابط تفعيل. راجع البريد الوارد والرسائل غير المرغوب فيها.');});
+ $('#password-login').addEventListener('click',function(){
+  const email=$('#owner-email').value.trim().toLowerCase(),password=$('#owner-password').value;
+  if(!email||!password){say('اكتب البريد وكلمة المرور أولًا.',true);return;}
+  say('جارٍ تسجيل الدخول…');
+  run(async function(){try{await signInWithPassword(email,password);$('#owner-password').value='';}catch(error){say(error.message||'تعذر تسجيل الدخول.',true);}});
+ });
+ $('#password-form').addEventListener('submit',function(event){
+  event.preventDefault();
+  const password=$('#new-owner-password').value,confirmation=$('#confirm-owner-password').value,message=$('#password-message');
+  if(password.length<14){message.textContent='كلمة المرور لازم تكون ١٤ حرفًا على الأقل.';message.classList.add('error');return;}
+  if(password!==confirmation){message.textContent='كلمتا المرور غير متطابقتين.';message.classList.add('error');return;}
+  message.textContent='جارٍ حفظ كلمة المرور…';message.classList.remove('error');
+  run(async function(){try{await updateOwnerPassword(password);$('#password-form').reset();message.textContent='تم حفظ كلمة المرور. يمكنك استخدامها في تسجيل الدخول القادم.';message.classList.remove('error');}catch(error){message.textContent=error.message||'تعذر حفظ كلمة المرور.';message.classList.add('error');}});
  });
  $('#logout').addEventListener('click',function(){
   run(async function(){if(session)await fetch(base+'/auth/v1/logout',{method:'POST',headers:{apikey:key,Authorization:'Bearer '+session.access_token}}).catch(function(){});showLogin();say('تم تسجيل الخروج.');});
@@ -222,6 +256,7 @@
  $('#clinic-form').addEventListener('submit',saveClinic);
  $('#tenant-list').addEventListener('click',function(event){const button=event.target.closest('[data-action]');if(!button)return;run(function(){return doTenantAction(button);});});
  $('#request-list').addEventListener('click',function(event){const button=event.target.closest('[data-action=save-request]');if(button)run(function(){return doRequestAction(button);});});
+ $('#doctor-activation-list').addEventListener('click',function(event){const button=event.target.closest('[data-action=decide-doctor-activation]');if(button)run(function(){return doDoctorActivationAction(button);});});
  async function start(){
   if(!base||!key){say('Supabase غير مربوط بهذه النسخة.');return;}
   try{

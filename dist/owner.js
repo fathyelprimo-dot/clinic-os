@@ -114,11 +114,11 @@
   }).join('');
  }
  function renderDoctorActivationRequests(){
-  if(!doctorRequests.length){$('#doctor-activation-list').innerHTML='<div class="empty-card">لا توجد دعوات أطباء بانتظار المراجعة.</div>';return;}
+  if(!doctorRequests.length){$('#doctor-activation-list').innerHTML='<div class="empty-card">لا توجد طلبات تفعيل أطباء بانتظار المراجعة.</div>';return;}
   $('#doctor-activation-list').innerHTML=doctorRequests.map(function(r){
    const label=r.status==='pending'?'بانتظار قرارك':r.status==='approved'?'تم القبول والتفعيل':'تم الرفض';
    const badge=r.status==='approved'?'':' off';
-   const actions=r.status==='pending'?'<div class="activation-actions"><button class="button primary" type="button" data-action="decide-doctor-activation" data-decision="approve" data-id="'+esc(r.id)+'">قبول وتفعيل</button><button class="button outline" type="button" data-action="decide-doctor-activation" data-decision="reject" data-id="'+esc(r.id)+'">رفض الدعوة</button></div>':'';
+   const actions=r.status==='pending'?'<div class="activation-actions"><button class="button primary" type="button" data-action="decide-doctor-activation" data-decision="approve" data-id="'+esc(r.id)+'">قبول وتفعيل</button><button class="button outline" type="button" data-action="decide-doctor-activation" data-decision="reject" data-id="'+esc(r.id)+'">رفض طلب التفعيل</button></div>':'';
    return '<article class="request-card"><div class="request-meta">'+esc(r.clinic_name)+' · '+esc(r.doctor_email||'')+' · '+esc(r.requested_at?new Date(r.requested_at).toLocaleDateString('ar-EG'):'')+'</div><h3>'+esc(r.doctor_name)+'</h3><p>'+esc(r.clinic_slug)+'</p><span class="status-pill'+badge+'">'+label+'</span>'+actions+'</article>';
   }).join('');
  }
@@ -181,11 +181,11 @@
     await ownerAction('update-clinic',{clinic_id:editingClinic.id,clinic:payload,services:services});
     toast('تم حفظ إعدادات العيادة والخدمات.');
    }else{
-    const created=await ownerAction('create-tenant',{clinic:payload,services:services});
+    let created;try{created=await ownerAction('create-tenant',{clinic:payload,services:services,initial_password:f.initial_password.value});}finally{f.initial_password.value='';}
     const id=created.tenant&&created.tenant.id;
-    if(!id)throw Error('تمت الدعوة لكن تعذر تأكيد رقم العيادة. حدّث القائمة قبل المحاولة مرة أخرى.');
+    if(!id)throw Error('أُنشئ الحساب لكن تعذر تأكيد رقم العيادة. حدّث القائمة قبل المحاولة مرة أخرى.');
     await ownerAction('update-clinic',{clinic_id:id,clinic:payload,services:services});
-    toast('أُنشئت العيادة وأُرسلت دعوة الدكتور إلى بريده.');
+    toast('أُنشئ حساب الدكتور بكلمة مرور أولية، والعيادة بانتظار موافقة التفعيل.');
    }
    resetClinicForm();await loadDashboard();
   }catch(errorValue){error.textContent=errorValue.message||'تعذر حفظ العيادة.';error.hidden=false;error.scrollIntoView({block:'nearest'});}
@@ -211,9 +211,9 @@
  }
  async function doDoctorActivationAction(button){
   const decision=button.dataset.decision;
-  if(decision==='reject'&&!window.confirm('هل تريد رفض الدعوة وإبقاء العيادة غير مفعلة؟'))return;
+  if(decision==='reject'&&!window.confirm('هل تريد رفض طلب التفعيل وإبقاء العيادة غير مفعلة؟'))return;
   await ownerAction('decide-doctor-activation',{request_id:button.dataset.id,decision:decision});
-  toast(decision==='approve'?'تم قبول الدعوة وتفعيل العيادة.':'تم رفض الدعوة وبقيت العيادة غير مفعلة.');
+  toast(decision==='approve'?'تم قبول الطلب وتفعيل العيادة.':'تم رفض طلب التفعيل وبقيت العيادة غير مفعلة.');
   await loadDashboard();
  }
  async function run(action){

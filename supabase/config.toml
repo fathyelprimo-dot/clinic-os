@@ -1,0 +1,14 @@
+project_id = "clinic-os-local"
+
+# Public patient endpoint validates its booking capability and rate limits itself.
+[functions.patient-booking]
+verify_jwt = false
+
+# Server-to-server dispatch validates DISPATCH_SECRET before any database work.
+[functions.notification-dispatch]
+verify_jwt = false
+
+# Publishable keys are not legacy JWTs. Owner Auth JWT is verified via getUser,
+# then platform_admins and the provisioning RPC enforce owner authorization.
+[functions.clinic-platform-admin]
+verify_jwt = false

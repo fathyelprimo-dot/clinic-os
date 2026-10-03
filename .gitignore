@@ -45,6 +45,9 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+/.tmp/
+/supabase/.temp/
+/public/fonts/
 /dist/client/
 /dist/server/
 /dist/.openai/

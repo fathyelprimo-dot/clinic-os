@@ -67,7 +67,7 @@
       <div id="summary-cards" class="summary-grid" aria-live="polite"></div>
 
       <section class="steps-grid" aria-label="خطوات إدارة العيادات">
-        <article><span>١</span><div><strong>أضف العيادة</strong><p>اكتب اسم الدكتور وبريده ورابط الصفحة الذي تختاره.</p></div></article>
+        <article><span>١</span><div><strong>أضف العيادة</strong><p>اكتب اسم الدكتور وبريده وكلمة مروره الأولية ورابط الصفحة الذي تختاره.</p></div></article>
         <article><span>٢</span><div><strong>خصّص التجربة</strong><p>عدّل الهوية والخدمات والأسعار وساعات العمل.</p></div></article>
         <article><span>٣</span><div><strong>تابع التفعيل</strong><p>تحكم يدويًا في الاشتراك وحالة ظهور العيادة.</p></div></article>
       </section>
@@ -87,7 +87,8 @@
             <div class="form-grid">
               <label><span>اسم العيادة أو الدكتور<span class="required-mark" aria-hidden="true">*</span></span><input name="name" required maxlength="100"></label>
               <label class="create-only"><span>اسم الدكتور<span class="required-mark" aria-hidden="true">*</span></span><input name="doctor_name" required maxlength="100"></label>
-              <label class="create-only"><span>بريد الدكتور لإرسال الدعوة<span class="required-mark" aria-hidden="true">*</span></span><input name="doctor_email" type="email" required maxlength="254" dir="ltr"></label>
+              <label class="create-only"><span>بريد الدكتور للدخول والاستعادة<span class="required-mark" aria-hidden="true">*</span></span><input name="doctor_email" type="email" required maxlength="254" dir="ltr"></label>
+              <label class="create-only"><span>كلمة المرور الأولية للدكتور<span class="required-mark" aria-hidden="true">*</span></span><input name="initial_password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"><small>يجب أن يغيّرها الدكتور عند أول دخول. لن تُعرض بعد الإنشاء.</small></label>
               <label><span>رابط العيادة الذي تحدده أنت<span class="required-mark" aria-hidden="true">*</span></span><input name="slug" required pattern="[a-z0-9-]{3,80}" minlength="3" maxlength="80" dir="ltr" placeholder="dr-ahmed-elsayed"><small>حروف إنجليزية صغيرة وأرقام وشرطة فقط.</small></label>
               <label>التخصص<input name="specialty" maxlength="120"></label>
               <label class="wide">العنوان أو رابط Google Maps<input name="address" maxlength="500" placeholder="اكتب العنوان أو الصق رابط خرائط Google"></label>
@@ -110,7 +111,7 @@
               <div id="service-rows"></div>
             </div>
             <p class="form-error" id="clinic-error" role="alert" hidden></p>
-            <div class="button-row form-actions"><button class="button primary" type="submit">حفظ وإرسال دعوة الدكتور</button><button id="cancel-clinic-bottom" class="button outline" type="button">إلغاء</button></div>
+            <div class="button-row form-actions"><button class="button primary" type="submit">حفظ وإنشاء حساب الدكتور</button><button id="cancel-clinic-bottom" class="button outline" type="button">إلغاء</button></div>
           </form>
 
           <div id="tenant-list" class="tenant-list" aria-live="polite"><div class="loading-card">جارٍ تحميل العيادات…</div></div>
@@ -120,7 +121,7 @@
           <section class="doctor-activation-section" aria-labelledby="doctor-activation-title">
             <div class="step-kicker"><span>04</span> تفعيل الأطباء</div>
             <h2 id="doctor-activation-title">طلبات تفعيل الأطباء</h2>
-            <p class="panel-intro">لن تعمل العيادة أو حساب الطبيب قبل قرارك. راجع الدعوة ثم اختر القبول والتفعيل أو الرفض.</p>
+            <p class="panel-intro">لن تعمل العيادة أو حساب الطبيب قبل قرارك. راجع طلب التفعيل ثم اختر القبول والتفعيل أو الرفض.</p>
             <div id="doctor-activation-list" class="request-list" aria-live="polite"><div class="loading-card">جارٍ تحميل طلبات التفعيل.</div></div>
           </section>
           <hr class="owner-divider">
