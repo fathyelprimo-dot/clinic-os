@@ -24,7 +24,15 @@
   if(session.expires_at*1000<Date.now()+60000)await refreshSession();
   const response=await fetch(base+'/functions/v1/clinic-platform-admin',{method:'POST',headers:{apikey:key,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:action},payload||{}))});
   const data=await response.json().catch(function(){return null;});
-  if(!response.ok){const error=Error(data&&data.error||'تعذر تنفيذ الإجراء. تحقق من صلاحية حساب المالك.');Object.assign(error,{cleanup_pending:data?.cleanup_pending,retry_new:data?.retry_new});throw error;}
+  if(!response.ok){
+   let message=data&&data.error||'تعذر تنفيذ الإجراء. تحقق من صلاحية حساب المالك.';
+   if(/^\?+[\s?.؟!]*$/.test(String(message))||String(message).includes('????')){
+    message='حدث خطأ من خادم إدارة المنصة (HTTP '+response.status+'). نسخة الدالة المنشورة قديمة أو رسالة الخطأ تالفة. حاول إعادة تحميل الصفحة، وإذا استمر الخطأ راجع تحديث clinic-platform-admin.';
+   }
+   const error=Error(message);
+   Object.assign(error,{status:response.status,action:action,cleanup_pending:data?.cleanup_pending,retry_new:data?.retry_new});
+   throw error;
+  }
   return data||{};
  }
  async function sendOwnerLink(email){
@@ -61,13 +69,23 @@
  function showLogin(){session=null;$('#login-panel').hidden=false;$('#dashboard').hidden=true;$('#logout').hidden=true;}
  async function claimAndLoad(){
   say('جارٍ التحقق من وصول المالك…');
+  let result;
   try{
-   const result=await ownerAction('claim-owner');
+   result=await ownerAction('claim-owner');
    if(result.owner!==true)throw Error('هذا البريد غير مفعّل كمالك للمنصة. استخدم طلب التفعيل أو الحساب المسجّل.');
-   showDashboard(result.email||session&&session.user&&session.user.email);
+  }catch(error){
+   showLogin();
+   say(error.message||'تعذر التحقق من حساب المالك.',true);
+   return;
+  }
+  showDashboard(result.email||session&&session.user&&session.user.email);
+  try{
    await loadDashboard();
    say('');
-  }catch(error){showLogin();say(error.message||'تعذر التحقق من حساب المالك.',true);}
+  }catch(error){
+   console.error('Owner dashboard load failed:',error);
+   say('تم تسجيل الدخول بنجاح، لكن تعذر تحميل جزء من لوحة المالك: '+(error.message||'خطأ غير معروف.'),true);
+  }
  }
  async function loadDashboard(){
   const result=await Promise.all([ownerAction('list-tenants'),ownerAction('list-change-requests'),ownerAction('list-doctor-activation-requests')]);
@@ -75,8 +93,14 @@
   requests=Array.isArray(result[1].requests)?result[1].requests:[];
   doctorRequests=Array.isArray(result[2].requests)?result[2].requests:[];
   renderTenants();renderRequests();renderDoctorActivationRequests();renderMetrics();
-  const maintenance=await ownerAction('list-owner-operations');
-  $('#owner-maintenance').innerHTML=(maintenance.operations||[]).map(function(op){return '<p>'+esc(op.clinic_slug)+' · عملية غير مكتملة <button class="button outline" data-clean-provision="'+esc(op.id)+'">إعادة فحص وتنظيف الحساب</button></p>';}).join('')+(maintenance.receipts||[]).map(function(r){return '<p>'+esc(r.confirmation_name)+' · تنظيف الصور غير مكتمل <button class="button outline" data-clean-media="'+esc(r.id)+'">إعادة تنظيف الصور</button></p>';}).join('');
+  try{
+   const maintenance=await ownerAction('list-owner-operations');
+   $('#owner-maintenance').innerHTML=(maintenance.operations||[]).map(function(op){return '<p>'+esc(op.clinic_slug)+' · عملية غير مكتملة <button class="button outline" data-clean-provision="'+esc(op.id)+'">إعادة فحص وتنظيف الحساب</button></p>';}).join('')+(maintenance.receipts||[]).map(function(r){return '<p>'+esc(r.confirmation_name)+' · تنظيف الصور غير مكتمل <button class="button outline" data-clean-media="'+esc(r.id)+'">إعادة تنظيف الصور</button></p>';}).join('');
+  }catch(error){
+   console.warn('Owner maintenance section unavailable:',error);
+   const node=$('#owner-maintenance');
+   if(node)node.innerHTML='<p class="muted">قسم الصيانة غير متاح حاليًا. '+esc(error.message||'تعذر تحميل بيانات الصيانة.')+'</p>';
+  }
  }
  function cairoToday(){
   const parts=new Intl.DateTimeFormat('en',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
