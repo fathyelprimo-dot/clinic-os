@@ -31,6 +31,18 @@ await exec('begin');
 await scalar('select public.platform_admin_create_tenant($1,$2,$3,$4) as value',[owner,doctor,data,services]);
 await assert.rejects(()=>scalar('select public.platform_admin_create_tenant($1,$2,$3,$4) as value',[owner,doctor,data,services]),/already in use/);await exec('rollback');checks++;
 console.log('PASS Valid email/decimal accepted; reproduced actual duplicate-slug failure');
+// Verify the narrow production repair on the current RPC prerequisites; roll it back.
+await exec('begin');
+const repair=fs.readdirSync('supabase/migrations').find(name=>name.endsWith('_owner_dashboard_provision_journal.sql'));
+await exec(migration(repair).replace(/^begin;|^commit;/gm,''));
+const repairId=crypto.randomUUID();
+const prepared=await scalar('select public.owner_prepare_tenant($1,$2,$3,$4) as value',[owner,repairId,data,services]);
+await db.query('update public.owner_provision_operations set doctor_user_id=$2 where id=$1',[repairId,doctor]);
+const createdRepair=await scalar('select public.owner_complete_tenant($1,$2,$3,$4,$5) as value',[owner,repairId,prepared.lease_token,data,services]);
+assert.equal(createdRepair.name,data.name);
+assert.equal(await scalar('select is_active as value from public.clinics where id=$1',[createdRepair.id]),false);
+for(const role of ['anon','authenticated'])assert.equal(await scalar("select has_function_privilege($1,'public.owner_prepare_tenant(uuid,uuid,jsonb,jsonb)','EXECUTE') as value",[role]),false);
+await exec('rollback');checks+=4;
 await exec(migration('20261003004126_owner_provision_delete_recovery.sql'));checks++;
 const req='30000000-0000-4000-8000-000000000001';
 const op=await scalar('select public.owner_prepare_tenant($1,$2,$3,$4) as value',[owner,req,data,services]);

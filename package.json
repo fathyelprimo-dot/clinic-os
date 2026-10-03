@@ -22,7 +22,9 @@
     "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json",
     "test:owner-db": "node scripts/test-owner-db.mjs",
     "test:owner-browser": "node scripts/test-owner-browser.mjs",
-    "check:encoding": "node scripts/check-encoding.mjs"
+    "check:encoding": "node scripts/check-encoding.mjs",
+    "test:owner-session": "node scripts/test-owner-session.mjs",
+    "check:syntax": "node scripts/check-syntax.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

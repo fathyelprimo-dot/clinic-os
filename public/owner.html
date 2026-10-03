@@ -90,7 +90,7 @@
               <label class="create-only"><span>اسم الدكتور<span class="required-mark" aria-hidden="true">*</span></span><input name="doctor_name" required maxlength="100"></label>
               <label class="create-only"><span>بريد الدكتور للدخول والاستعادة<span class="required-mark" aria-hidden="true">*</span></span><input name="doctor_email" type="email" required maxlength="254" dir="ltr"></label>
               <label class="create-only"><span>كلمة المرور الأولية للدكتور<span class="required-mark" aria-hidden="true">*</span></span><input name="initial_password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"><small>يجب أن يغيّرها الدكتور عند أول دخول. لن تُعرض بعد الإنشاء.</small></label>
-              <label><span>رابط العيادة الذي تحدده أنت<span class="required-mark" aria-hidden="true">*</span></span><input name="slug" required minlength="3" maxlength="80" dir="ltr" placeholder="dr-ahmed-elsayed"><small>حروف إنجليزية صغيرة وأرقام وشرطة فقط.</small></label>
+              <label><span>رابط العيادة الذي تحدده أنت<span class="required-mark" aria-hidden="true">*</span></span><input name="slug" required pattern="[a-z0-9\-]{3,80}" minlength="3" maxlength="80" dir="ltr" placeholder="dr-ahmed-elsayed"><small>حروف إنجليزية صغيرة وأرقام وشرطة فقط.</small></label>
               <label>التخصص<input name="specialty" maxlength="120"></label>
               <label class="wide">العنوان أو رابط Google Maps<input name="address" maxlength="500" placeholder="اكتب العنوان أو الصق رابط خرائط Google"></label>
               <label>نبذة قصيرة<input name="tagline" maxlength="180"></label>

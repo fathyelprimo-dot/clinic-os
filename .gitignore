@@ -47,6 +47,7 @@ next-env.d.ts
 /work/
 /.tmp/
 /supabase/.temp/
+*.tsbuildinfo
 /public/fonts/
 /dist/client/
 /dist/server/

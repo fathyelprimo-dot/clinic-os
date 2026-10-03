@@ -29,10 +29,12 @@ await test('Phone alone cannot request tracking',async()=>{assert.equal((await s
 await test('Push validation rejects loopback, credential URLs and untrusted HTTPS hosts',()=>{for(const endpoint of ['https://127.0.0.1/a','https://example.test/a','http://fcm.googleapis.com/a','https://user@fcm.googleapis.com/a','https://fcm.googleapis.com:8443/a'])assert.equal(context.validPushSubscription({endpoint,keys:{p256dh:'A'.repeat(87),auth:'A'.repeat(22)}}),false);assert.equal(context.validPushSubscription({endpoint:'https://fcm.googleapis.com/fcm/send/example',keys:{p256dh:'A'.repeat(87),auth:'A'.repeat(22)}}),true);});
 const authCalls=[];
 let ownerAllowed=false,provisionFails=false;const ownerDbCalls=[];const deletedUsers=[];
-const caller={auth:{getUser:async()=>({data:{user:{id:'owner-id',email_confirmed_at:'today'}},error:null})}};
+let userError=null,claimError=null,claimAllowed=true,maintenanceError=null;
+const caller={auth:{getUser:async()=>({data:{user:{id:'owner-id',email_confirmed_at:'today'}},error:userError})}};
 let completeFails=false,cleanupFails=false,ambiguousComplete=false;
 const operation={id:'30000000-0000-4000-8000-000000000001',doctor_user_id:'new-doctor-id',lease_token:'lease',state:'prepared'};
-const admin={from:()=>({select(){return this;},eq(){return this;},update(){return this;},then(resolve){resolve({error:null});},maybeSingle:async()=>({data:ownerAllowed?{user_id:'owner-id'}:null,error:null}),single:async()=>({data:{id:clinic},error:null})}),rpc:async(name,args)=>{ownerDbCalls.push({name,args});
+const admin={from:()=>({select(){return this;},eq(){return this;},in(){return this;},order(){return this;},limit(){return this;},update(){return this;},then(resolve){resolve({data:[],error:maintenanceError});},maybeSingle:async()=>({data:ownerAllowed?{user_id:'owner-id'}:null,error:null}),single:async()=>({data:{id:clinic},error:null})}),rpc:async(name,args)=>{ownerDbCalls.push({name,args});
+ if(name==='platform_admin_claim_owner')return {data:claimAllowed,error:claimError};
  if(name==='owner_prepare_tenant')return {data:operation,error:provisionFails?{message:'Invalid clinic'}:null};
  if(name==='owner_cancel_tenant')return {data:{...operation,state:ambiguousComplete?'completed':'cleanup_required',clinic_id:clinic},error:null};
  return {data:{id:clinic},error:completeFails?{code:'TEST_FAILURE'}:null};
@@ -46,6 +48,12 @@ await test('Preflight failure does not create an Auth account',async()=>{provisi
 await test('Clinic transaction failure compensates only its preselected account',async()=>{completeFails=true;const response=await createDoctor();assert.equal(response.status,409);assert.equal(deletedUsers.at(-1),operation.doctor_user_id);assert.equal((await response.json()).retry_new,true);});
 await test('Lost commit response is reconciled without deleting linked doctor',async()=>{ambiguousComplete=true;const count=deletedUsers.length;assert.equal((await createDoctor()).status,200);assert.equal(deletedUsers.length,count);ambiguousComplete=false;});
 await test('Cleanup failure reports pending instead of claiming rollback',async()=>{cleanupFails=true;const response=await createDoctor();assert.equal(response.status,503);assert.equal((await response.json()).cleanup_pending,true);});
+const adminRequest=action=>owner(new Request('https://functions.test/owner',{method:'POST',headers:{Authorization:'Bearer test'},body:JSON.stringify({action})}));
+await test('Transient Auth failure returns 503 without classifying credentials as invalid',async()=>{userError={status:503};const response=await adminRequest('claim-owner');assert.equal(response.status,503);assert.equal((await response.json()).code,'AUTH_UNAVAILABLE');userError=null;});
+await test('Invalid Auth identity returns 401',async()=>{userError={status:401};assert.equal((await adminRequest('claim-owner')).status,401);userError=null;});
+await test('Claim database outage is distinct from an actual permission denial',async()=>{claimError={code:'08006'};const unavailable=await adminRequest('claim-owner');assert.equal(unavailable.status,503);assert.equal((await unavailable.json()).code,'OWNER_CHECK_UNAVAILABLE');claimError={code:'42501'};assert.equal((await adminRequest('claim-owner')).status,403);claimError=null;});
+await test('Missing maintenance schema returns actionable failure rather than empty success',async()=>{maintenanceError={code:'42P01'};const response=await adminRequest('list-owner-operations');assert.equal(response.status,503);const data=await response.json();assert.equal(data.code,'OWNER_SCHEMA_NOT_READY');assert.equal(data.operations,undefined);assert.match(data.error,/[\u0600-\u06ff]/);assert.doesNotMatch(data.error,/\?{3,}/);maintenanceError=null;});
+await test('Error responses have UTF-8 and a safe stable code',async()=>{const response=await adminRequest('unsupported');assert.equal(response.status,400);assert.match(response.headers.get('content-type'),/charset=utf-8/);const data=await response.json();assert.equal(data.code,'INVALID_REQUEST');assert.match(data.error,/[\u0600-\u06ff]/);assert.doesNotMatch(JSON.stringify(data),/test-public-key|service_role|initial-test-password/);});
 const dispatchCalls=[];const pushes=[];const deleted=[];
 let pushStatus=410;
 const subscription={endpoint:'https://fcm.googleapis.com/fcm/send/test',keys:{p256dh:'A'.repeat(87),auth:'A'.repeat(22)}};

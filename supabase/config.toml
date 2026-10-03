@@ -17,7 +17,6 @@ verify_jwt = false
 [functions.notification-dispatch]
 verify_jwt = false
 
-# Publishable keys are not legacy JWTs. Owner Auth JWT is verified via getUser,
-# then platform_admins and the provisioning RPC enforce owner authorization.
+# Preserve the deployed gateway JWT check, followed by getUser and owner authorization.
 [functions.clinic-platform-admin]
-verify_jwt = false
+verify_jwt = true

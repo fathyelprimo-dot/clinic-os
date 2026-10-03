@@ -1,4 +1,5 @@
 import fs from 'node:fs';import assert from 'node:assert/strict';
 const files=['app/page.tsx','dist/index.html','dist/owner.html','dist/owner.js','dist/reset-password.html','dist/recovery.js','dist/auth-entry.js','dist/stage2.js','dist/supabase-client.js','supabase/functions/clinic-platform-admin/index.ts','supabase/functions/clinic-platform-admin/operations.ts','supabase/migrations/20261003004126_owner_provision_delete_recovery.sql'];
+files.push('public/owner.js','public/owner.html','scripts/test-owner-session.mjs','scripts/patch-hosted-owner.mjs','supabase/tests/owner_dashboard_repair.sql','supabase/config.toml',...fs.readdirSync('supabase/migrations').filter(n=>n.endsWith('_owner_dashboard_provision_journal.sql')).map(n=>'supabase/migrations/'+n));
 for(const file of files){const text=new TextDecoder('utf-8',{fatal:true}).decode(fs.readFileSync(file));assert.ok(!text.includes('\uFFFD'),file+': replacement character');assert.ok(!text.includes('????'),file+': damaged question-mark text');}
 console.log(`${files.length} source files passed strict UTF-8/corrupt-text checks.`);

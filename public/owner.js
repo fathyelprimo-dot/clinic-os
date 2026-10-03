@@ -5,7 +5,8 @@
  const key=config.publishableKey||'';
  const $=function(selector,root){return (root||document).querySelector(selector);};
  const $$=function(selector,root){return Array.from((root||document).querySelectorAll(selector));};
- let creating=false,creationId=null,deleting=null,deletionId=null;
+ let creating=false,creationId=null,deleting=null,deletionId=null,refreshing=null;
+ let generation=0;const sectionState={};
  let session=null,tenants=[],requests=[],doctorRequests=[],editingClinic=null,toastTimer=null;
  const defaults=[
   {name:'كشف عادي',category:'normal',price:350,duration_minutes:20,priority:0,active:true},
@@ -17,21 +18,33 @@
  function say(message,error){const node=$('#auth-message');node.textContent=message||'';node.classList.toggle('error',Boolean(error));}
  function toast(message){const node=$('#toast');node.textContent=message;node.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(function(){node.hidden=true;},4200);}
  function setSession(data){if(!data||!data.access_token||!data.refresh_token)throw Error('تعذر استلام جلسة آمنة. افتح رابط الدخول الأخير مرة أخرى.');session={access_token:data.access_token,refresh_token:data.refresh_token,expires_at:data.expires_at||Math.floor(Date.now()/1000)+Number(data.expires_in||3600),user:data.user||null};}
- async function authRequest(path,body){const response=await fetch(base+path,{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json().catch(function(){return null;});if(!response.ok)throw Error(data&&data.msg==='Invalid login credentials'?'البريد الإلكتروني أو كلمة المرور غير صحيحة.':'تعذر إكمال تسجيل الدخول. تحقق من البريد والإعدادات وحاول مرة أخرى.');return data;}
- async function refreshSession(){if(!session||!session.refresh_token)throw Error('انتهت الجلسة. سجّل الدخول مرة أخرى.');const data=await authRequest('/auth/v1/token?grant_type=refresh_token',{refresh_token:session.refresh_token});setSession(data);}
- async function ownerAction(action,payload){
-  if(!session)throw Error('سجّل الدخول برابط المالك أولًا.');
+ async function authRequest(path,body){const response=await fetch(base+path,{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json().catch(function(){return null;});if(!response.ok){const error=Error(data&&data.msg==='Invalid login credentials'?'البريد الإلكتروني أو كلمة المرور غير صحيحة.':'تعذر إكمال تسجيل الدخول. تحقق من البريد والإعدادات وحاول مرة أخرى.');error.status=response.status;throw error;}return data;}
+ function denied(error){return error.status===401||error.status===403;}
+ function rejectSession(error){showLogin();say(error.message||'انتهت الجلسة أو لا يملك الحساب صلاحية المالك.',true);}
+ async function refreshSession(){
+  if(refreshing)return refreshing;
+  const current=session,version=generation;
+  if(!current)throw Object.assign(Error('انتهت الجلسة. سجّل الدخول مرة أخرى.'),{status:401});
+  refreshing=(async function(){try{
+   const data=await authRequest('/auth/v1/token?grant_type=refresh_token',{refresh_token:current.refresh_token});
+   if(version!==generation)throw Error('تغيّرت الجلسة.');setSession(data);
+  }catch(error){if(version===generation&&(denied(error)||error.status===400)){error.status=401;rejectSession(error);}throw error;}
+  finally{refreshing=null;}})();return refreshing;
+ }
+ async function ownerAction(action,payload,retried){
+  if(!session)throw Object.assign(Error('سجّل الدخول بحساب المالك أولًا.'),{status:401});
+  const version=generation;
   if(session.expires_at*1000<Date.now()+60000)await refreshSession();
+  if(version!==generation||!session)throw Error('تغيّرت الجلسة.');
   const response=await fetch(base+'/functions/v1/clinic-platform-admin',{method:'POST',headers:{apikey:key,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:action},payload||{}))});
   const data=await response.json().catch(function(){return null;});
+  if(version!==generation||!session)throw Error('تغيّرت الجلسة.');
+  if(response.status===401&&!retried){await refreshSession();return ownerAction(action,payload,true);}
   if(!response.ok){
-   let message=data&&data.error||'تعذر تنفيذ الإجراء. تحقق من صلاحية حساب المالك.';
-   if(/^\?+[\s?.؟!]*$/.test(String(message))||String(message).includes('????')){
-    message='حدث خطأ من خادم إدارة المنصة (HTTP '+response.status+'). نسخة الدالة المنشورة قديمة أو رسالة الخطأ تالفة. حاول إعادة تحميل الصفحة، وإذا استمر الخطأ راجع تحديث clinic-platform-admin.';
-   }
-   const error=Error(message);
-   Object.assign(error,{status:response.status,action:action,cleanup_pending:data?.cleanup_pending,retry_new:data?.retry_new});
-   throw error;
+   let message=data&&data.error||'تعذر تنفيذ الطلب. حاول مرة أخرى.';
+   if(/\?{3,}|\uFFFD/.test(String(message)))message='تعذر تحميل البيانات من الخادم. حاول مرة أخرى.';
+   const error=Object.assign(Error(message),{status:response.status,code:data?.code,action:action,cleanup_pending:data?.cleanup_pending,retry_new:data?.retry_new});
+   if(denied(error))rejectSession(error);throw error;
   }
   return data||{};
  }
@@ -70,42 +83,48 @@
   $('#login-panel').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=false;
   $('#owner-email-label').textContent=email||session&&session.user&&session.user.email||'حساب المالك';
  }
- function showLogin(){session=null;$('#login-panel').hidden=false;$('#dashboard').hidden=true;$('#logout').hidden=true;}
+ function showLogin(){generation++;session=null;tenants=[];requests=[];doctorRequests=[];Object.keys(sectionState).forEach(function(key){delete sectionState[key];});['#tenant-list','#request-list','#doctor-activation-list','#owner-maintenance','#summary-cards'].forEach(function(id){$(id).innerHTML='';});$('#login-panel').hidden=false;$('#dashboard').hidden=true;$('#logout').hidden=true;}
  async function claimAndLoad(){
   say('جارٍ التحقق من وصول المالك…');
-  let result;
   try{
-   result=await ownerAction('claim-owner');
-   if(result.owner!==true)throw Error('هذا البريد غير مفعّل كمالك للمنصة. استخدم طلب التفعيل أو الحساب المسجّل.');
+   const result=await ownerAction('claim-owner');
+   if(result.owner!==true)throw Object.assign(Error('هذا الحساب غير مفعّل كمالك للمنصة.'),{status:403});
+   showDashboard(result.email);say('');await loadDashboard();
   }catch(error){
-   showLogin();
-   say(error.message||'تعذر التحقق من حساب المالك.',true);
-   return;
-  }
-  showDashboard(result.email||session&&session.user&&session.user.email);
-  try{
-   await loadDashboard();
-   say('');
-  }catch(error){
-   console.error('Owner dashboard load failed:',error);
-   say('تم تسجيل الدخول بنجاح، لكن تعذر تحميل جزء من لوحة المالك: '+(error.message||'خطأ غير معروف.'),true);
+   if(denied(error)){if(session)rejectSession(error);return;}
+   say('تعذر التحقق من الصلاحية مؤقتًا. أعد المحاولة.',true);
+   $('#auth-retry').hidden=false;
   }
  }
- async function loadDashboard(){
-  const result=await Promise.all([ownerAction('list-tenants'),ownerAction('list-change-requests'),ownerAction('list-doctor-activation-requests')]);
-  tenants=Array.isArray(result[0].tenants)?result[0].tenants:[];
-  requests=Array.isArray(result[1].requests)?result[1].requests:[];
-  doctorRequests=Array.isArray(result[2].requests)?result[2].requests:[];
-  renderTenants();renderRequests();renderDoctorActivationRequests();renderMetrics();
+ const sections={
+  tenants:{action:'list-tenants',node:'#tenant-list',label:'العيادات',field:'tenants'},
+  requests:{action:'list-change-requests',node:'#request-list',label:'طلبات التعديل',field:'requests'},
+  doctors:{action:'list-doctor-activation-requests',node:'#doctor-activation-list',label:'طلبات تفعيل الأطباء',field:'requests'},
+  maintenance:{action:'list-owner-operations',node:'#owner-maintenance',label:'عمليات الصيانة'}
+ };
+ async function loadSection(name){
+  const spec=sections[name],version=generation;
+  sectionState[name]='loading';
+  $(spec.node).innerHTML='<p role="status">جارٍ تحميل '+spec.label+'…</p>';
+  if(name==='tenants')$('#summary-cards').innerHTML='<p>جارٍ تحميل بيانات العيادات…</p>';
   try{
-   const maintenance=await ownerAction('list-owner-operations');
-   $('#owner-maintenance').innerHTML=(maintenance.operations||[]).map(function(op){return '<p>'+esc(op.clinic_slug)+' · عملية غير مكتملة <button class="button outline" data-clean-provision="'+esc(op.id)+'">إعادة فحص وتنظيف الحساب</button></p>';}).join('')+(maintenance.receipts||[]).map(function(r){return '<p>'+esc(r.confirmation_name)+' · تنظيف الصور غير مكتمل <button class="button outline" data-clean-media="'+esc(r.id)+'">إعادة تنظيف الصور</button></p>';}).join('');
-  }catch(error){
-   console.warn('Owner maintenance section unavailable:',error);
-   const node=$('#owner-maintenance');
-   if(node)node.innerHTML='<p class="muted">قسم الصيانة غير متاح حاليًا. '+esc(error.message||'تعذر تحميل بيانات الصيانة.')+'</p>';
+   const result=await ownerAction(spec.action);
+   if(version!==generation||!session)return;
+   if(spec.field&&!Array.isArray(result[spec.field]))throw Error('تعذر تأكيد البيانات المستلمة.');
+   if(name==='maintenance'&&(!Array.isArray(result.operations)||!Array.isArray(result.receipts)))throw Error('تعذر تأكيد بيانات الصيانة.');
+   sectionState[name]='ready';
+   if(name==='tenants'){tenants=result.tenants;renderTenants();renderMetrics();}
+   if(name==='requests'){requests=result.requests;renderRequests();}
+   if(name==='doctors'){doctorRequests=result.requests;renderDoctorActivationRequests();if(sectionState.tenants==='ready')renderTenants();}
+   if(name==='maintenance')$(spec.node).innerHTML=result.operations.map(function(op){return '<p>'+esc(op.clinic_slug)+' · عملية غير مكتملة <button class="button outline" data-clean-provision="'+esc(op.id)+'">إعادة فحص وتنظيف الحساب</button></p>';}).join('')+result.receipts.map(function(r){return '<p>'+esc(r.confirmation_name)+' · تنظيف الصور غير مكتمل <button class="button outline" data-clean-media="'+esc(r.id)+'">إعادة تنظيف الصور</button></p>';}).join('');
+  }catch{
+   if(version!==generation||!session)return;
+   sectionState[name]='error';
+   $(spec.node).innerHTML='<div class="empty-card" role="alert">تعذر تحميل '+spec.label+'. تحقق من الاتصال ثم أعد المحاولة. <button type="button" class="button outline" data-retry-section="'+name+'">إعادة المحاولة</button></div>';
+   if(name==='tenants')$('#summary-cards').innerHTML='<p>إحصاءات العيادات غير متاحة حتى ينجح التحميل.</p>';
   }
  }
+ async function loadDashboard(){await Promise.all(Object.keys(sections).map(loadSection));}
  function cairoToday(){
   const parts=new Intl.DateTimeFormat('en',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
   const values=Object.fromEntries(parts.filter(function(part){return part.type!=='literal';}).map(function(part){return [part.type,part.value];}));
@@ -184,7 +203,8 @@
   const url=clinicHref(slug||'your-clinic',false),link=$('#slug-preview');
   link.href=url;link.textContent=url;
  }
- function normalizeEmail(value){return String(value||'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,'').trim().toLowerCase();}\n function formClinic(){
+ function normalizeEmail(value){return String(value||'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,'').trim().toLowerCase();}
+ function formClinic(){
   const f=$('#clinic-form').elements;
   return {slug:f.slug.value.trim(),name:f.name.value.trim(),specialty:f.specialty.value.trim(),address:f.address.value.trim(),tagline:f.tagline.value.trim(),about:f.about.value.trim(),template:f.template.value,photo_url:f.photo_url.value.trim(),accent:f.accent.value,opens:f.opens.value,closes:f.closes.value,instapay:f.instapay.value.trim(),wallet:f.wallet.value.trim(),buffer_minutes:Number(f.buffer_minutes.value),latitude:f.latitude.value.trim(),longitude:f.longitude.value.trim()};
  }
@@ -278,7 +298,8 @@
  $('#cancel-clinic-bottom').addEventListener('click',resetClinicForm);
  $('#add-service').addEventListener('click',function(){addServiceRow();});
  $('#service-rows').addEventListener('click',function(event){const button=event.target.closest('[data-remove-service]');if(button){button.closest('.service-editor-row').remove();}});
- $('#clinic-form').elements.doctor_email.addEventListener('blur',function(event){event.target.value=normalizeEmail(event.target.value);});\n $('#clinic-form').elements.slug.addEventListener('input',updateSlugPreview);
+ $('#clinic-form').elements.doctor_email.addEventListener('blur',function(event){event.target.value=normalizeEmail(event.target.value);});
+ $('#clinic-form').elements.slug.addEventListener('input',updateSlugPreview);
  $('#clinic-form').elements.template.addEventListener('change',function(event){const colors={classic:'#087f7b',ocean:'#2563eb',violet:'#7c3aed'};$('#clinic-form').elements.accent.value=colors[event.target.value]||colors.classic;});
  $('#clinic-form').elements.photo_file?.addEventListener('change',function(event){
   const file=event.target.files&&event.target.files[0];if(!file)return;
@@ -302,6 +323,8 @@
  $('#tenant-list').addEventListener('click',function(event){const button=event.target.closest('[data-action]');if(!button)return;run(function(){return doTenantAction(button);});});
  $('#request-list').addEventListener('click',function(event){const button=event.target.closest('[data-action=save-request]');if(button)run(function(){return doRequestAction(button);});});
  $('#doctor-activation-list').addEventListener('click',function(event){const button=event.target.closest('[data-action=decide-doctor-activation]');if(button)run(function(){return doDoctorActivationAction(button);});});
+ document.addEventListener('click',function(event){const button=event.target.closest('[data-retry-section]');if(button&&sections[button.dataset.retrySection])void loadSection(button.dataset.retrySection);});
+ const authRetry=document.createElement('button');authRetry.id='auth-retry';authRetry.type='button';authRetry.className='button outline';authRetry.hidden=true;authRetry.textContent='إعادة التحقق';$('#auth-message').after(authRetry);authRetry.addEventListener('click',function(){authRetry.hidden=true;void claimAndLoad();});
  async function start(){
   if(!base||!key){say('Supabase غير مربوط بهذه النسخة.');return;}
   try{
