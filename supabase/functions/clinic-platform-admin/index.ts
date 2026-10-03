@@ -15,6 +15,11 @@ function reply(status: number, body: Record<string, unknown>) {
 }
 
 function validId(value: unknown) { return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+function normalizeEmail(value: unknown) {
+  return typeof value === "string"
+    ? value.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\s+/g, "").trim().toLowerCase()
+    : "";
+}
 
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -387,6 +392,10 @@ Deno.serve(async (request: Request) => {
         diagnostic("create-auth-user", createError);
         if (createError?.code === "email_exists" || createError?.code === "email_address_exists") {
           return reply(409, { error: "بريد الدكتور مسجّل بالفعل. أعد المحاولة؛ إذا كان الحساب غير مرتبط سيُعاد استخدامه تلقائيًا." });
+        }
+        const authMessage = (createError?.message || "").toLowerCase();
+        if (authMessage.includes("email") || createError?.code === "email_address_invalid") {
+          return reply(400, { error: "بريد الدكتور غير صالح في Supabase Auth. راجع البريد المكتوب بدون مسافات أو حروف عربية." });
         }
         return reply(400, { error: "تعذر إنشاء حساب الدكتور. راجع البريد وكلمة المرور وحاول مرة أخرى." });
       }
