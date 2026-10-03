@@ -84,8 +84,15 @@ Deno.serve(async (request: Request) => {
         admin.from("owner_provision_operations").select("id,state,clinic_slug,lease_until").eq("owner_id", userId).in("state", ["prepared", "cleanup_required"]).order("created_at", { ascending: false }).limit(50),
         admin.from("owner_deletion_receipts").select("id,confirmation_name").eq("owner_id", userId).eq("media_deleted", false).limit(50),
       ]);
+      const missingMaintenanceTable = [operations.error, receipts.error].some((error) => {
+        const message = error?.message?.toLowerCase?.() || "";
+        return message.includes("does not exist") || message.includes("could not find the table") || message.includes("relation");
+      });
+      if (missingMaintenanceTable) {
+        return reply(200, { operations: [], receipts: [] });
+      }
       if (operations.error || receipts.error) return reply(503, { error: "تعذر تحميل العمليات غير المكتملة." });
-      return reply(200, { operations: operations.data, receipts: receipts.data });
+      return reply(200, { operations: operations.data || [], receipts: receipts.data || [] });
     }
     if (input.action === "cleanup-provision") {
       if (!validId(input.operation_id)) return reply(400, { error: "معرّف العملية غير صالح." });
