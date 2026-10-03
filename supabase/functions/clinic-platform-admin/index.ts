@@ -99,16 +99,46 @@ Deno.serve(async (request: Request) => {
       try { return reply(200, await retryProvisionCleanup(admin, userId, input.operation_id)); }
       catch { diagnostic("retry-cleanup"); return reply(409, { error: "تعذر إعادة فحص العملية. انتظر انتهاء الدقيقتين ثم حاول مجددًا." }); }
     }
-    if (input.action === "delete-clinic" || input.action === "cleanup-clinic-media") {
-      if (!validId(input.operation_id)) return reply(400, { error: "معرّف العملية غير صالح." });
-      if (input.action === "delete-clinic") {
-        if (!validId(input.clinic_id) || typeof input.confirmation !== "string") return reply(400, { error: "اكتب اسم العيادة أو رابطها لتأكيد الحذف." });
-        const { data, error } = await admin.rpc("owner_delete_clinic", { p_owner: userId, p_clinic: input.clinic_id, p_confirmation: input.confirmation, p_request: input.operation_id });
-        if (error) { diagnostic("delete", error); return reply(409, { error: "لم يتم تأكيد الحذف. راجع اسم العيادة والصلاحية؛ أعد المحاولة بنفس الطلب إذا انقطع الاتصال." }); }
-        if (!data?.deleted) return reply(503, { error: "تعذر تأكيد الحذف." });
+    if (input.action === "delete-clinic") {
+      const clinicId = typeof input.clinic_id === "string" ? input.clinic_id : "";
+      const confirmation = typeof input.confirmation === "string" ? input.confirmation.trim() : "";
+      if (!validId(clinicId) || !confirmation) return reply(400, { error: "اكتب اسم العيادة أو رابطها كما يظهر لتأكيد الحذف." });
+
+      const { data, error } = await admin.rpc("platform_admin_delete_clinic", {
+        p_admin_user_id: userId,
+        p_clinic_id: clinicId,
+        p_confirmation: confirmation,
+      });
+      if (error) {
+        const message = (error.message || "").toLowerCase();
+        if (message.includes("confirmation_mismatch")) return reply(400, { error: "تأكيد الحذف غير مطابق. اكتب اسم العيادة أو الـ slug بالضبط." });
+        if (message.includes("clinic_not_found")) return reply(404, { error: "العيادة غير موجودة أو تم حذفها بالفعل." });
+        if (message.includes("not_platform_admin") || error.code === "42501") return reply(403, { error: "هذا الحساب لا يملك صلاحية حذف العيادات." });
+        diagnostic("delete", error);
+        return reply(409, { error: "تعذر حذف العيادة بأمان. لم يتم تنفيذ حذف جزئي." });
       }
+
+      let mediaPending = false;
+      try {
+        const { data: files, error: listError } = await admin.storage.from("clinic-media").list(clinicId, { limit: 1000 });
+        if (listError) throw listError;
+        const paths = (files || []).filter((item) => item?.name).map((item) => clinicId + "/" + item.name);
+        if (paths.length) {
+          const { error: removeError } = await admin.storage.from("clinic-media").remove(paths);
+          if (removeError) throw removeError;
+        }
+      } catch (storageError) {
+        mediaPending = true;
+        diagnostic("storage-cleanup", storageError);
+      }
+
+      return reply(200, { deleted: true, media_pending: mediaPending, clinic: data || null });
+    }
+
+    if (input.action === "cleanup-clinic-media") {
+      if (!validId(input.operation_id)) return reply(400, { error: "معرّف العملية غير صالح." });
       try { await cleanMedia(admin, userId, input.operation_id); return reply(200, { deleted: true, media_pending: false }); }
-      catch { diagnostic("storage-cleanup"); return reply(input.action === "delete-clinic" ? 200 : 503, { deleted: input.action === "delete-clinic", media_pending: true, operation_id: input.operation_id, error: "تعذر تأكيد تنظيف ملفات الصور. حاول لاحقًا." }); }
+      catch { diagnostic("storage-cleanup"); return reply(503, { deleted: true, media_pending: true, operation_id: input.operation_id, error: "تعذر تأكيد تنظيف ملفات الصور. حاول لاحقًا." }); }
     }
 
     if (input.action === "list-tenants") {
