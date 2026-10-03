@@ -184,7 +184,7 @@
   const url=clinicHref(slug||'your-clinic',false),link=$('#slug-preview');
   link.href=url;link.textContent=url;
  }
- function formClinic(){
+ function normalizeEmail(value){return String(value||'').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,'').trim().toLowerCase();}\n function formClinic(){
   const f=$('#clinic-form').elements;
   return {slug:f.slug.value.trim(),name:f.name.value.trim(),specialty:f.specialty.value.trim(),address:f.address.value.trim(),tagline:f.tagline.value.trim(),about:f.about.value.trim(),template:f.template.value,photo_url:f.photo_url.value.trim(),accent:f.accent.value,opens:f.opens.value,closes:f.closes.value,instapay:f.instapay.value.trim(),wallet:f.wallet.value.trim(),buffer_minutes:Number(f.buffer_minutes.value),latitude:f.latitude.value.trim(),longitude:f.longitude.value.trim()};
  }
@@ -207,7 +207,7 @@
    if(/^https?:\/\//i.test(clinic.address)&&!/^(?:https:\/\/(?:www\.)?google\.com\/maps(?:\/|[?#])|https:\/\/maps\.google\.com\/|https:\/\/maps\.app\.goo\.gl\/)/i.test(clinic.address))throw Error('الصق رابط Google Maps أو اكتب العنوان كنص.');
    if(!services.length||services.length>20)throw Error('أضف خدمة واحدة على الأقل وبحد أقصى ٢٠ خدمة.');
    if(services.some(function(s){return !s.name||s.price<0||s.price>100000||s.duration_minutes<5||s.duration_minutes>180||s.priority<0||s.priority>100;}))throw Error('راجع أسماء الخدمات والأسعار والمدد والأولويات.');
-   const payload=Object.assign({},clinic,{doctor_name:f.doctor_name.value.trim(),doctor_email:f.doctor_email.value.trim().toLowerCase()});
+   const payload=Object.assign({},clinic,{doctor_name:f.doctor_name.value.trim(),doctor_email:normalizeEmail(f.doctor_email.value)});
    if(editingClinic){
     await ownerAction('update-clinic',{clinic_id:editingClinic.id,clinic:payload,services:services});
     toast('تم حفظ إعدادات العيادة والخدمات.');
@@ -278,7 +278,7 @@
  $('#cancel-clinic-bottom').addEventListener('click',resetClinicForm);
  $('#add-service').addEventListener('click',function(){addServiceRow();});
  $('#service-rows').addEventListener('click',function(event){const button=event.target.closest('[data-remove-service]');if(button){button.closest('.service-editor-row').remove();}});
- $('#clinic-form').elements.slug.addEventListener('input',updateSlugPreview);
+ $('#clinic-form').elements.doctor_email.addEventListener('blur',function(event){event.target.value=normalizeEmail(event.target.value);});\n $('#clinic-form').elements.slug.addEventListener('input',updateSlugPreview);
  $('#clinic-form').elements.template.addEventListener('change',function(event){const colors={classic:'#087f7b',ocean:'#2563eb',violet:'#7c3aed'};$('#clinic-form').elements.accent.value=colors[event.target.value]||colors.classic;});
  $('#clinic-form').elements.photo_file?.addEventListener('change',function(event){
   const file=event.target.files&&event.target.files[0];if(!file)return;
