@@ -309,10 +309,117 @@ Deno.serve(async (request: Request) => {
 
     if (input.action !== "create-tenant") return reply(400, { error: "الإجراء غير معروف." });
 
-    input.operation_id ||= crypto.randomUUID();
-    if (!validId(input.operation_id)) return reply(400, { error: "معرّف العملية غير صالح." });
-    const result = await provision(admin, userId, input);
-    return reply(result.status, result.body);
+    const clinic = input.clinic;
+    const services = input.services;
+    const initialPassword = input.initial_password;
+    if (!clinic || typeof clinic !== "object" || Array.isArray(clinic) || !Array.isArray(services)) {
+      return reply(400, { error: "راجع بيانات العيادة والخدمات." });
+    }
+    if (typeof initialPassword !== "string" || initialPassword.length < 12 || initialPassword.length > 128) {
+      return reply(400, { error: "كلمة المرور الأولية يجب أن تكون من ١٢ إلى ١٢٨ حرفًا." });
+    }
+
+    const doctorEmail = typeof clinic.doctor_email === "string" ? clinic.doctor_email.trim().toLowerCase() : "";
+    const doctorName = typeof clinic.doctor_name === "string" ? clinic.doctor_name.trim() : "";
+    if (!doctorEmail || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(doctorEmail)) {
+      return reply(400, { error: "اكتب بريد الدكتور الإلكتروني بشكل صحيح." });
+    }
+    if (doctorName.length < 2 || doctorName.length > 100) {
+      return reply(400, { error: "اكتب اسم الدكتور بشكل صحيح." });
+    }
+    if (services.length < 1 || services.length > 20) {
+      return reply(400, { error: "أضف خدمة واحدة على الأقل وبحد أقصى ٢٠ خدمة." });
+    }
+
+    async function findAuthUserByEmail(email: string) {
+      for (let page = 1; page <= 100; page++) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+        if (error) throw error;
+        const found = data.users.find((item) => (item.email || "").toLowerCase() === email);
+        if (found) return found;
+        if (data.users.length < 1000) break;
+      }
+      return null;
+    }
+
+    async function existingUserIsLinked(existingUserId: string) {
+      const [membership, patient, platformAdmin, activation] = await Promise.all([
+        admin.from("memberships").select("clinic_id").eq("user_id", existingUserId).limit(1),
+        admin.from("patients").select("id").eq("user_id", existingUserId).limit(1),
+        admin.from("platform_admins").select("user_id").eq("user_id", existingUserId).limit(1),
+        admin.from("doctor_activation_requests").select("id").eq("doctor_user_id", existingUserId).limit(1),
+      ]);
+      const queryError = membership.error || patient.error || platformAdmin.error || activation.error;
+      if (queryError) throw queryError;
+      return Boolean(
+        membership.data?.length ||
+        patient.data?.length ||
+        platformAdmin.data?.length ||
+        activation.data?.length
+      );
+    }
+
+    let doctorUser = await findAuthUserByEmail(doctorEmail);
+    let createdNewUser = false;
+
+    if (doctorUser) {
+      if (await existingUserIsLinked(doctorUser.id)) {
+        return reply(409, { error: "بريد الدكتور مستخدم بالفعل في حساب مرتبط بالنظام. استخدم بريدًا آخر أو عدّل الحساب الموجود." });
+      }
+      const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(doctorUser.id, {
+        password: initialPassword,
+        email_confirm: true,
+        user_metadata: { ...(doctorUser.user_metadata || {}), full_name: doctorName },
+      });
+      if (updateError || !updated.user) {
+        diagnostic("reuse-auth-user", updateError);
+        return reply(409, { error: "وجدنا حسابًا قديمًا بهذا البريد لكن تعذر إعادة تجهيزه. جرّب بريدًا آخر أو احذف الحساب القديم من Auth." });
+      }
+      doctorUser = updated.user;
+    } else {
+      const { data: created, error: createError } = await admin.auth.admin.createUser({
+        email: doctorEmail,
+        password: initialPassword,
+        email_confirm: true,
+        user_metadata: { full_name: doctorName },
+      });
+      if (createError || !created.user) {
+        diagnostic("create-auth-user", createError);
+        if (createError?.code === "email_exists" || createError?.code === "email_address_exists") {
+          return reply(409, { error: "بريد الدكتور مسجّل بالفعل. أعد المحاولة؛ إذا كان الحساب غير مرتبط سيُعاد استخدامه تلقائيًا." });
+        }
+        return reply(400, { error: "تعذر إنشاء حساب الدكتور. راجع البريد وكلمة المرور وحاول مرة أخرى." });
+      }
+      doctorUser = created.user;
+      createdNewUser = true;
+    }
+
+    const { data, error } = await admin.rpc("platform_admin_create_tenant_pending", {
+      p_admin_user_id: userId,
+      p_doctor_user_id: doctorUser.id,
+      p_data: { ...clinic, doctor_email: doctorEmail, doctor_name: doctorName },
+      p_services: services,
+    });
+
+    if (error) {
+      if (createdNewUser) {
+        const { error: cleanupError } = await admin.auth.admin.deleteUser(doctorUser.id);
+        if (cleanupError) diagnostic("create-cleanup", cleanupError);
+      }
+      const message = error.message || "";
+      if (/duplicate key|already in use/i.test(message)) {
+        return reply(409, { error: "رابط العيادة أو إحدى البيانات مستخدمة بالفعل. غيّر رابط العيادة وحاول مرة أخرى." });
+      }
+      diagnostic("create-tenant", error);
+      return reply(400, { error: "تعذر إنشاء العيادة. راجع البيانات والخدمات وحاول مرة أخرى." });
+    }
+
+    return reply(201, {
+      tenant: data,
+      account_created: createdNewUser,
+      account_reused: !createdNewUser,
+      activation_status: "pending",
+    });
   } catch {
     diagnostic("unhandled");
     return reply(500, { error: "تعذر إتمام العملية. أعد فحص الحالة قبل المحاولة مجددًا." });
