@@ -2,9 +2,9 @@
 import fs from 'node:fs';
 const root=new URL('../',import.meta.url),target=new URL('public/clinic/',root),publicRoot=new URL('public/',root);
 fs.mkdirSync(target,{recursive:true});fs.mkdirSync(publicRoot,{recursive:true});
-for(const name of ['index.html','clinic.css','stage2.css','experience.css','icons.js','domain.js','config.js','supabase-client.js','stage2.js','push-sw.js'])fs.copyFileSync(new URL('dist/'+name,root),new URL(name,target));
+for(const name of ['index.html','clinic.css','stage2.css','experience.css','icons.js','domain.js','config.js','supabase-client.js','stage2.js','push-sw.js','reset-password.html','recovery.js','auth-entry.js'])fs.copyFileSync(new URL('dist/'+name,root),new URL(name,target));
 fs.cpSync(new URL('dist/fonts/',root),new URL('fonts/',target),{recursive:true});
-for(const name of ['owner.html','owner.css','owner.js'])fs.copyFileSync(new URL('dist/'+name,root),new URL(name,publicRoot));
+for(const name of ['owner.html','owner.css','owner.js','auth-entry.js'])fs.copyFileSync(new URL('dist/'+name,root),new URL(name,publicRoot));
 fs.copyFileSync(new URL('dist/config.js',root),new URL('config.js',publicRoot));
 fs.cpSync(new URL('dist/fonts/',root),new URL('fonts/',publicRoot),{recursive:true});
 fs.writeFileSync(new URL('components/clinic-app.tsx',root),`'use client';

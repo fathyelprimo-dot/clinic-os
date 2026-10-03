@@ -15,3 +15,5 @@
 .password-settings{margin:0 0 18px}.password-settings summary{cursor:pointer;font-weight:750;color:var(--ink)}.password-settings .panel-intro{margin-top:10px}.password-settings form{max-width:600px}
 .required-mark{color:#c4473e;font-weight:900;margin-inline-start:.25em}
 .owner-divider{border:0;border-top:1px solid #e1e9eb;margin:24px 0}.activation-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.activation-actions .button{flex:1;min-height:42px}
+
+.button.danger{background:#b42318;color:white;border-color:#b42318}.delete-dialog{border:1px solid var(--line,#dde6e5);border-radius:20px;padding:28px;max-width:540px;width:calc(100% - 32px);color:var(--ink,#203736)}.delete-dialog::backdrop{background:#102f3866}.delete-dialog p{line-height:1.8}.delete-dialog input{width:100%;padding:12px;border:1px solid #cadbd8;border-radius:10px;margin-top:8px}.delete-dialog .form-actions{display:flex;gap:12px;flex-wrap:wrap}

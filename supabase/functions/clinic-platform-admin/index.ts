@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.99.1";
 
+import { provision, retryProvisionCleanup, cleanMedia, diagnostic } from "./operations.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
@@ -12,9 +14,7 @@ function reply(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
 }
 
-function cleanEmail(value: unknown) {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
-}
+function validId(value: unknown) { return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
 
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -29,7 +29,7 @@ Deno.serve(async (request: Request) => {
     })();
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !publishableKey || !serviceRoleKey) {
-    console.error("Required Supabase function environment is missing.");
+    diagnostic("request");
     return reply(500, { error: "إعدادات الخدمة غير مكتملة. راجع إعدادات Supabase." });
   }
 
@@ -74,17 +74,42 @@ Deno.serve(async (request: Request) => {
       .eq("user_id", userId)
       .maybeSingle();
     if (accessError) {
-      console.error("Platform admin lookup failed:", accessError.message);
+      diagnostic("request");
       return reply(503, { error: "تعذر التحقق من صلاحية مالك المنصة." });
     }
     if (!allowed) return reply(403, { error: "هذا الحساب غير مفعّل كمالك للمنصة." });
+
+    if (input.action === "list-owner-operations") {
+      const [operations, receipts] = await Promise.all([
+        admin.from("owner_provision_operations").select("id,state,clinic_slug,lease_until").eq("owner_id", userId).in("state", ["prepared", "cleanup_required"]).order("created_at", { ascending: false }).limit(50),
+        admin.from("owner_deletion_receipts").select("id,confirmation_name").eq("owner_id", userId).eq("media_deleted", false).limit(50),
+      ]);
+      if (operations.error || receipts.error) return reply(503, { error: "تعذر تحميل العمليات غير المكتملة." });
+      return reply(200, { operations: operations.data, receipts: receipts.data });
+    }
+    if (input.action === "cleanup-provision") {
+      if (!validId(input.operation_id)) return reply(400, { error: "معرّف العملية غير صالح." });
+      try { return reply(200, await retryProvisionCleanup(admin, userId, input.operation_id)); }
+      catch { diagnostic("retry-cleanup"); return reply(409, { error: "تعذر إعادة فحص العملية. انتظر انتهاء الدقيقتين ثم حاول مجددًا." }); }
+    }
+    if (input.action === "delete-clinic" || input.action === "cleanup-clinic-media") {
+      if (!validId(input.operation_id)) return reply(400, { error: "معرّف العملية غير صالح." });
+      if (input.action === "delete-clinic") {
+        if (!validId(input.clinic_id) || typeof input.confirmation !== "string") return reply(400, { error: "اكتب اسم العيادة أو رابطها لتأكيد الحذف." });
+        const { data, error } = await admin.rpc("owner_delete_clinic", { p_owner: userId, p_clinic: input.clinic_id, p_confirmation: input.confirmation, p_request: input.operation_id });
+        if (error) { diagnostic("delete", error); return reply(409, { error: "لم يتم تأكيد الحذف. راجع اسم العيادة والصلاحية؛ أعد المحاولة بنفس الطلب إذا انقطع الاتصال." }); }
+        if (!data?.deleted) return reply(503, { error: "تعذر تأكيد الحذف." });
+      }
+      try { await cleanMedia(admin, userId, input.operation_id); return reply(200, { deleted: true, media_pending: false }); }
+      catch { diagnostic("storage-cleanup"); return reply(input.action === "delete-clinic" ? 200 : 503, { deleted: input.action === "delete-clinic", media_pending: true, operation_id: input.operation_id, error: "تعذر تأكيد تنظيف ملفات الصور. حاول لاحقًا." }); }
+    }
 
     if (input.action === "list-tenants") {
       const { data, error } = await admin.rpc("platform_admin_list_tenants", {
         p_admin_user_id: userId,
       });
       if (error) {
-        console.error("Tenant list failed:", error.message);
+        diagnostic("request");
         return reply(500, { error: "تعذر تحميل العيادات حاليًا." });
       }
       return reply(200, { tenants: Array.isArray(data) ? data : [] });
@@ -95,7 +120,7 @@ Deno.serve(async (request: Request) => {
         p_admin_user_id: userId,
       });
       if (error) {
-        console.error("Doctor activation request list failed:", error.message);
+        diagnostic("request");
         return reply(500, { error: "تعذر تحميل طلبات تفعيل الأطباء." });
       }
       return reply(200, { requests: Array.isArray(data) ? data : [] });
@@ -116,7 +141,7 @@ Deno.serve(async (request: Request) => {
         p_decision: decision,
       });
       if (error) {
-        console.error("Doctor activation decision failed:", error.message);
+        diagnostic("request");
         return reply(409, { error: "تعذر تنفيذ القرار. حدّث الصفحة وتحقق من حالة الطلب." });
       }
       return reply(200, { result: data });
@@ -143,7 +168,7 @@ Deno.serve(async (request: Request) => {
         if (message.toLowerCase().includes("duplicate key") || message.toLowerCase().includes("already in use")) {
           return reply(409, { error: "رابط العيادة مستخدم بالفعل. اختار رابطًا مختلفًا." });
         }
-        console.error("Clinic customization failed:", message);
+        diagnostic("request");
         return reply(400, { error: "تعذر حفظ التخصيص. راجع البيانات والخدمات وحاول مرة أخرى." });
       }
       return reply(200, { ok: true });
@@ -165,7 +190,7 @@ Deno.serve(async (request: Request) => {
           .eq("status", "pending")
           .maybeSingle();
         if (pendingError) {
-          console.error("Pending doctor activation lookup failed:", pendingError.message);
+          diagnostic("request");
           return reply(503, { error: "تعذر التحقق من طلب تفعيل الطبيب." });
         }
         if (pendingRequest) {
@@ -178,7 +203,7 @@ Deno.serve(async (request: Request) => {
         p_is_active: input.is_active,
       });
       if (error) {
-        console.error("Clinic activation update failed:", error.message);
+        diagnostic("request");
         return reply(400, { error: "تعذر تحديث حالة العيادة. راجعها وحاول مرة أخرى." });
       }
       return reply(200, { ok: true, is_active: input.is_active });
@@ -189,7 +214,7 @@ Deno.serve(async (request: Request) => {
         p_admin_user_id: userId,
       });
       if (error) {
-        console.error("Change request list failed:", error.message);
+        diagnostic("request");
         return reply(500, { error: "تعذر تحميل طلبات التعديل حاليًا." });
       }
       return reply(200, { requests: Array.isArray(data) ? data : [] });
@@ -216,7 +241,7 @@ Deno.serve(async (request: Request) => {
         p_ends_on: endsOn,
       });
       if (error) {
-        console.error("Subscription update failed:", error.message);
+        diagnostic("request");
         return reply(400, { error: "تعذر حفظ تاريخ الاشتراك. راجع العيادة وحاول مرة أخرى." });
       }
       return reply(200, { ok: true, ends_on: endsOn });
@@ -239,7 +264,7 @@ Deno.serve(async (request: Request) => {
         p_owner_note: ownerNote,
       });
       if (error) {
-        console.error("Change request update failed:", error.message);
+        diagnostic("request");
         return reply(400, { error: "تعذر تحديث الطلب. حاول مرة أخرى." });
       }
       return reply(200, { ok: true });
@@ -247,62 +272,12 @@ Deno.serve(async (request: Request) => {
 
     if (input.action !== "create-tenant") return reply(400, { error: "الإجراء غير معروف." });
 
-    const clinic = input.clinic;
-    const services = input.services;
-    if (!clinic || typeof clinic !== "object" || !Array.isArray(services)) {
-      return reply(400, { error: "أكمل بيانات العيادة والخدمات." });
-    }
-    const doctorEmail = cleanEmail(clinic.doctor_email);
-    const doctorName = typeof clinic.doctor_name === "string" ? clinic.doctor_name.trim() : "";
-    if (!doctorEmail || doctorName.length < 2 || doctorName.length > 100) {
-      return reply(400, { error: "اكتب اسم الدكتور وبريده الإلكتروني." });
-    }
-    const initialPassword = typeof input.initial_password === 'string' ? input.initial_password : '';
-    if (initialPassword.length < 12 || initialPassword.length > 128) {
-      return reply(400, { error: 'كلمة المرور الأولية يجب أن تكون من ١٢ إلى ١٢٨ حرفًا.' });
-    }
-    // The owner is authenticated above. Never update an existing email account:
-    // it may belong to a different clinic or another platform role.
-    const { data: invitation, error: inviteError } =
-      await admin.auth.admin.createUser({
-        email: doctorEmail, password: initialPassword, email_confirm: true,
-        user_metadata: { full_name: doctorName },
-      });
-    if (inviteError || !invitation.user) {
-      if (inviteError?.message?.toLowerCase().includes("redirect")) {
-        return reply(400, { error: "أضف رابط الموقع إلى قائمة التحويل المسموحة في إعدادات Supabase Auth، ثم أعد إرسال الدعوة." });
-      }
-      return reply(400, {
-        error: inviteError?.message?.toLowerCase().includes("already")
-          ? "بريد الدكتور مسجّل بالفعل. استخدم دعوة جديدة ببريد غير مستخدم."
-          : "تعذر إنشاء حساب الدكتور. راجع سياسة كلمات المرور في Supabase.",
-      });
-    }
-
-    const { error: requirementError } = await admin.from('doctor_password_requirements').insert({ user_id: invitation.user.id, required: true });
-    if (requirementError) {
-      await admin.auth.admin.deleteUser(invitation.user.id);
-      return reply(503, { error: 'تعذر تأمين الحساب الجديد. لم تتم إضافة العيادة.' });
-    }
-    const { data, error } = await admin.rpc("platform_admin_create_tenant_pending", {
-      p_admin_user_id: userId,
-      p_doctor_user_id: invitation.user.id,
-      p_data: { ...clinic, doctor_email: doctorEmail },
-      p_services: services,
-    });
-    if (error) {
-      const { error: cleanupError } = await admin.auth.admin.deleteUser(invitation.user.id);
-      if (cleanupError) console.error("Invitation cleanup failed:", cleanupError.message);
-      const message = error.message || "";
-      if (message.includes("already in use")) {
-        return reply(409, { error: "رابط العيادة مستخدم بالفعل. اختار اسم رابطًا آخر." });
-      }
-      console.error("Tenant creation failed:", message);
-      return reply(400, { error: "لم تكتمل إضافة العيادة. راجع الحقول وحاول مرة أخرى." });
-    }
-    return reply(201, { tenant: data, account_created: true, activation_status: "pending" });
+    input.operation_id ||= crypto.randomUUID();
+    if (!validId(input.operation_id)) return reply(400, { error: "معرّف العملية غير صالح." });
+    const result = await provision(admin, userId, input);
+    return reply(result.status, result.body);
   } catch {
-    console.error("Platform admin request failed.");
-    return reply(500, { error: "حدث عطل مؤقت. حاول مرة أخرى." });
+    diagnostic("unhandled");
+    return reply(500, { error: "تعذر إتمام العملية. أعد فحص الحالة قبل المحاولة مجددًا." });
   }
 });

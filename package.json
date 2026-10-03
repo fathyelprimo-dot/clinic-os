@@ -19,7 +19,10 @@
     "test:patient-db": "node scripts/test-patient-db.mjs",
     "test:patient-services": "node scripts/test-patient-services.mjs",
     "test:patient-browser": "node scripts/test-patient-browser.mjs",
-    "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json"
+    "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json",
+    "test:owner-db": "node scripts/test-owner-db.mjs",
+    "test:owner-browser": "node scripts/test-owner-browser.mjs",
+    "check:encoding": "node scripts/check-encoding.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

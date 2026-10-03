@@ -1,0 +1,71 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {PGlite} from '@electric-sql/pglite';
+process.on('uncaughtException',error=>{console.error(error.message);process.exitCode=1;});
+const db=new PGlite();let checks=0;
+const exec=sql=>db.exec(sql),scalar=async(sql,args=[])=>(await db.query(sql,args)).rows[0]?.value;
+const migration=name=>fs.readFileSync('supabase/migrations/'+name,'utf8');
+await exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;
+create table auth.users(id uuid primary key,email text,phone text,phone_confirmed_at timestamptz,encrypted_password text);
+create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+grant usage on schema auth to anon,authenticated,service_role;grant execute on function auth.uid() to anon,authenticated,service_role;`);
+await exec(migration('202609300001_clinic_os.sql').replace('alter publication supabase_realtime add table public.appointments,public.notifications,public.clinics,public.services;',''));
+await exec(migration('202609300003_notification_delivery.sql'));
+// Test-only prerequisites for owner migrations absent from this checkout. No remote database access.
+await exec(`alter table public.clinics add is_active boolean default true;alter table public.clinics add tagline text default '';alter table public.clinics add about text default '';alter table public.clinics add template text default 'classic';
+create table public.platform_admins(user_id uuid primary key references auth.users);
+create table public.clinic_subscriptions(clinic_id uuid primary key references public.clinics,ends_on date);
+create table public.clinic_change_requests(id uuid primary key default gen_random_uuid(),clinic_id uuid references public.clinics);
+create function private.is_platform_admin_user(u uuid) returns boolean language sql as $$select exists(select 1 from public.platform_admins where user_id=u)$$;
+create function private.can_manage_clinic_media(text) returns boolean language sql as $$select false$$;
+create schema storage;create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);`);
+await exec(migration('20261002224337_doctor_activation_approval.sql'));
+await exec(migration('20261002235035_patient_push_doctor_passwords.sql'));
+// Source captured read-only from the deployed database: verify encoding/regex assumptions.
+await exec(fs.readFileSync('scripts/fixtures/deployed-owner-rpcs.sql','utf8'));
+const owner='10000000-0000-4000-8000-000000000001',doctor='20000000-0000-4000-8000-000000000001',outsider='10000000-0000-4000-8000-000000000002';
+await db.query("insert into auth.users(id,email) values($1,'owner@example.test'),($2,'doctor@example.test'),($3,'other@example.test')",[owner,doctor,outsider]);
+await db.query('insert into public.platform_admins values($1)',[owner]);
+const data={slug:'test-clinic',name:'عيادة الاختبار',doctor_name:'طبيب الاختبار',doctor_email:'doctor@example.test',latitude:'30.125',longitude:'31.25',tagline:'رعاية',about:'نص عربي',template:'ocean',buffer_minutes:5},services=[{name:'كشف تجريبي',category:'normal',price:125.50,duration_minutes:20,priority:0,active:true}];
+await exec('begin');
+await scalar('select public.platform_admin_create_tenant($1,$2,$3,$4) as value',[owner,doctor,data,services]);
+await assert.rejects(()=>scalar('select public.platform_admin_create_tenant($1,$2,$3,$4) as value',[owner,doctor,data,services]),/already in use/);await exec('rollback');checks++;
+console.log('PASS Valid email/decimal accepted; reproduced actual duplicate-slug failure');
+await exec(migration('20261003004126_owner_provision_delete_recovery.sql'));checks++;
+const req='30000000-0000-4000-8000-000000000001';
+const op=await scalar('select public.owner_prepare_tenant($1,$2,$3,$4) as value',[owner,req,data,services]);
+await db.query('update public.owner_provision_operations set doctor_user_id=$2 where id=$1',[req,doctor]);
+await assert.rejects(()=>scalar('select public.owner_complete_tenant($1,$2,$3,$4,$5) as value',[outsider,req,op.lease_token,data,services]),/administrator/);checks++;
+const tenant=await scalar('select public.owner_complete_tenant($1,$2,$3,$4,$5) as value',[owner,req,op.lease_token,data,services]);
+assert.equal(tenant.name,data.name);assert.equal(await scalar('select count(*)::int as value from public.services where clinic_id=$1',[tenant.id]),1);checks+=2;
+assert.equal(await scalar('select about as value from public.clinics where id=$1',[tenant.id]),data.about);checks++;
+assert.equal(await scalar('select required as value from public.doctor_password_requirements where user_id=$1',[doctor]),true);checks++;
+assert.equal((await scalar('select public.owner_cancel_tenant($1,$2,$3) as value',[owner,req,op.lease_token])).state,'completed');checks++;
+await assert.rejects(()=>scalar('select public.owner_prepare_tenant($1,$2,$3,$4) as value',[owner,crypto.randomUUID(),data,services]),/already in use/);checks++;
+// Synthetic dependencies only; another clinic and shared doctor must survive.
+const other=await scalar("insert into public.clinics(slug,name) values('other-clinic','أخرى') returning id as value");
+await db.query("insert into public.memberships values($1,$2,'doctor')",[other,doctor]);
+const patient=await scalar("insert into public.patients(clinic_id,name,phone) values($1,'مريض تجريبي','01012345678') returning id as value",[tenant.id]);
+const service=await scalar('select id as value from public.services where clinic_id=$1',[tenant.id]);
+const appointment=await scalar("insert into public.appointments(clinic_id,patient_id,service_id,request_key,scheduled_at,service_name,price,duration_minutes,priority,category,payment_method) values($1,$2,$3,gen_random_uuid(),now(),'Test',100,20,0,'normal','cash') returning id as value",[tenant.id,patient,service]);
+await db.query("insert into public.medical_records(clinic_id,patient_id) values($1,$2);",[tenant.id,patient]);
+await db.query("insert into public.encounters(clinic_id,patient_id,appointment_id,doctor_id,diagnosis) values($1,$2,$3,$4,'TEST ONLY')",[tenant.id,patient,appointment,doctor]);
+await db.query("insert into public.payments(clinic_id,appointment_id,amount,method,received_by) values($1,$2,100,'cash',$3)",[tenant.id,appointment,doctor]);
+await db.query("insert into public.notifications(clinic_id,patient_id,appointment_id,kind,message) values($1,$2,$3,'confirmation','Test')",[tenant.id,patient,appointment]);
+await db.query("insert into public.booking_capabilities(clinic_id,appointment_id,request_key,token_hash) values($1,$2,gen_random_uuid(),$3)",[tenant.id,appointment,'a'.repeat(64)]);
+await db.query("insert into public.push_subscriptions(clinic_id,appointment_id,endpoint_hash,subscription) values($1,$2,'hash','{}')",[tenant.id,appointment]);
+await db.query("insert into storage.objects(bucket_id,name) values('clinic-media',$1)",[tenant.id+'/image.png']);
+const del=crypto.randomUUID(),args=[owner,tenant.id,data.name,del];
+await assert.rejects(()=>scalar('select public.owner_delete_clinic($1,$2,$3,$4) as value',[owner,tenant.id,'wrong',del]),/mismatch/);checks++;
+await assert.rejects(()=>scalar('select public.owner_delete_clinic($1,$2,$3,$4) as value',[outsider,...args.slice(1)]),/administrator/);checks++;
+// An unexpected dependency must roll the entire transaction back.
+await exec('create table future_dependency(clinic_id uuid references public.clinics)');await db.query('insert into future_dependency values($1)',[tenant.id]);
+await assert.rejects(()=>scalar('select public.owner_delete_clinic($1,$2,$3,$4) as value',args),/foreign key/);
+assert.equal(await scalar('select count(*)::int as value from public.patients where clinic_id=$1',[tenant.id]),1);assert.equal(await scalar('select count(*)::int as value from public.owner_deletion_receipts'),0);checks+=3;
+await exec('drop table future_dependency');
+const deleted=await scalar('select public.owner_delete_clinic($1,$2,$3,$4) as value',args);assert.equal(deleted.deleted,true);assert.equal(deleted.media_pending,true);checks+=2;
+assert.deepEqual(await scalar('select public.owner_delete_clinic($1,$2,$3,$4) as value',args),deleted);checks++;
+for(const table of ['clinics','patients','appointments','services','payments','medical_records','encounters','notifications','push_subscriptions','booking_capabilities','memberships','doctor_activation_requests','audit_log']){assert.equal(await scalar(`select count(*)::int as value from public.${table} where ${table==='clinics'?'id':'clinic_id'}=$1`,[tenant.id]),0);checks++;}
+assert.equal(await scalar('select count(*)::int as value from public.memberships where clinic_id=$1',[other]),1);assert.equal(await scalar('select count(*)::int as value from auth.users where id=$1',[doctor]),1);checks+=2;
+for(const role of ['anon','authenticated']){await exec('set role '+role);await assert.rejects(()=>scalar('select public.owner_delete_clinic($1,$2,$3,$4) as value',args),/permission denied/);for(const table of ['owner_provision_operations','owner_deletion_receipts'])await assert.rejects(()=>db.query('select * from public.'+table),/permission denied/);await exec('reset role');checks+=3;}
+await db.close();console.log(`Owner database checks: ${checks} passed (isolated PostgreSQL; no remote writes).`);

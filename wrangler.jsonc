@@ -1,10 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "clinic-os",
-  "compatibility_date": "2026-10-02",
+  "compatibility_date": "2026-05-22",
   "main": "vinext/server/fetch-handler",
   "assets": {
     "directory": "dist/client",
+    "html_handling": "none",
     "not_found_handling": "none",
     "binding": "ASSETS"
   }

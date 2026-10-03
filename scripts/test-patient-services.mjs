@@ -9,7 +9,8 @@ const shared=transpile(fs.readFileSync('supabase/functions/_shared/push.ts','utf
 function load(path,dependencies,environment={}){
  let handler;const context=vm.createContext({Request,Response,URL,Set,Intl,Date,TextEncoder,Uint8Array,crypto,AbortSignal,console:{error(){}},...dependencies,Deno:{env:{get:name=>environment[name]},serve:fn=>handler=fn}});
  const source=fs.readFileSync(path,'utf8').replace(/^import .*;\r?\n/gm,'');
- vm.runInContext(shared+transpile(source),context);
+ const ownerShared=path.endsWith('clinic-platform-admin/index.ts')?fs.readFileSync('supabase/functions/clinic-platform-admin/operations.ts','utf8').replace(/^import .*;\r?\n/gm,'').replaceAll('export ',''):'';
+ vm.runInContext(shared+transpile(ownerShared)+transpile(source),context);
  return {handler,context};
 }
 const clinic='10000000-0000-4000-8000-000000000001';
@@ -29,13 +30,22 @@ await test('Push validation rejects loopback, credential URLs and untrusted HTTP
 const authCalls=[];
 let ownerAllowed=false,provisionFails=false;const ownerDbCalls=[];const deletedUsers=[];
 const caller={auth:{getUser:async()=>({data:{user:{id:'owner-id',email_confirmed_at:'today'}},error:null})}};
-const admin={from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:ownerAllowed?{user_id:'owner-id'}:null,error:null}),insert:async input=>{ownerDbCalls.push(input);return {error:null};}}),rpc:async(name,args)=>{ownerDbCalls.push({name,args});return {data:{id:clinic},error:provisionFails?{message:'Invalid clinic'}:null};},auth:{admin:{createUser:async input=>{authCalls.push(input);return {data:{user:{id:'new-doctor-id'}},error:null};},deleteUser:async id=>{deletedUsers.push(id);return {error:null};}}}};
+let completeFails=false,cleanupFails=false,ambiguousComplete=false;
+const operation={id:'30000000-0000-4000-8000-000000000001',doctor_user_id:'new-doctor-id',lease_token:'lease',state:'prepared'};
+const admin={from:()=>({select(){return this;},eq(){return this;},update(){return this;},then(resolve){resolve({error:null});},maybeSingle:async()=>({data:ownerAllowed?{user_id:'owner-id'}:null,error:null}),single:async()=>({data:{id:clinic},error:null})}),rpc:async(name,args)=>{ownerDbCalls.push({name,args});
+ if(name==='owner_prepare_tenant')return {data:operation,error:provisionFails?{message:'Invalid clinic'}:null};
+ if(name==='owner_cancel_tenant')return {data:{...operation,state:ambiguousComplete?'completed':'cleanup_required',clinic_id:clinic},error:null};
+ return {data:{id:clinic},error:completeFails?{code:'TEST_FAILURE'}:null};
+},auth:{admin:{createUser:async input=>{authCalls.push(input);return {data:{user:{id:'new-doctor-id'}},error:null};},deleteUser:async id=>{deletedUsers.push(id);return {error:cleanupFails?{status:503}:null};}}}};
 const owner=load('supabase/functions/clinic-platform-admin/index.ts',{createClient:(_url,key)=>key==='test-public-key'?caller:admin},environment).handler;
-await test('Doctor account creation rejects non-owner before any Auth admin operation',async()=>{const response=await owner(new Request('https://functions.test/owner',{method:'POST',headers:{Authorization:'Bearer user'},body:JSON.stringify({action:'create-tenant',initial_password:'never-store-this'})}));assert.equal(response.status,403);assert.equal(authCalls.length,0);});
+const createDoctor=()=>owner(new Request('https://functions.test/owner',{method:'POST',headers:{Authorization:'Bearer owner-jwt'},body:JSON.stringify({action:'create-tenant',operation_id:operation.id,clinic:{slug:'test',doctor_name:'Test Doctor',doctor_email:'doctor@example.test'},services:[{}],initial_password:'initial-test-password'})}));
+await test('Doctor creation rejects non-owner before Auth admin operation',async()=>{assert.equal((await createDoctor()).status,403);assert.equal(authCalls.length,0);});
 await test('Owner endpoint requires a bearer session',async()=>{assert.equal((await owner(new Request('https://functions.test/owner',{method:'POST',body:'{}'}))).status,401);});
-const createDoctor=()=>owner(new Request('https://functions.test/owner',{method:'POST',headers:{Authorization:'Bearer owner-jwt'},body:JSON.stringify({action:'create-tenant',clinic:{slug:'test',doctor_name:'Test Doctor',doctor_email:'doctor@example.test'},services:[{}],initial_password:'initial-test-password'})}));
-await test('Authorized owner creates Auth password before assigning guarded clinic membership',async()=>{ownerAllowed=true;const response=await createDoctor();assert.equal(response.status,201);assert.equal(authCalls.at(-1).password,'initial-test-password');assert.ok(ownerDbCalls.some(c=>c.user_id==='new-doctor-id'&&c.required===true));const provision=ownerDbCalls.find(c=>c.name==='platform_admin_create_tenant_pending');assert.equal(provision.args.p_admin_user_id,'owner-id');assert.doesNotMatch(JSON.stringify(provision.args),/initial-test-password/);assert.doesNotMatch(await response.text(),/password/);});
-await test('Failed clinic provisioning cleans up the newly-created Auth account',async()=>{provisionFails=true;const response=await createDoctor();assert.equal(response.status,400);assert.equal(deletedUsers.at(-1),'new-doctor-id');});
+await test('Authorized owner preflights database then creates password with journal UUID',async()=>{ownerAllowed=true;const response=await createDoctor();assert.equal(response.status,201);assert.equal(authCalls.at(-1).password,'initial-test-password');assert.equal(authCalls.at(-1).id,operation.doctor_user_id);assert.equal(ownerDbCalls[0].name,'owner_prepare_tenant');assert.doesNotMatch(JSON.stringify(ownerDbCalls),/initial-test-password/);assert.doesNotMatch(await response.text(),/password/);});
+await test('Preflight failure does not create an Auth account',async()=>{provisionFails=true;const count=authCalls.length;assert.equal((await createDoctor()).status,409);assert.equal(authCalls.length,count);provisionFails=false;});
+await test('Clinic transaction failure compensates only its preselected account',async()=>{completeFails=true;const response=await createDoctor();assert.equal(response.status,409);assert.equal(deletedUsers.at(-1),operation.doctor_user_id);assert.equal((await response.json()).retry_new,true);});
+await test('Lost commit response is reconciled without deleting linked doctor',async()=>{ambiguousComplete=true;const count=deletedUsers.length;assert.equal((await createDoctor()).status,200);assert.equal(deletedUsers.length,count);ambiguousComplete=false;});
+await test('Cleanup failure reports pending instead of claiming rollback',async()=>{cleanupFails=true;const response=await createDoctor();assert.equal(response.status,503);assert.equal((await response.json()).cleanup_pending,true);});
 const dispatchCalls=[];const pushes=[];const deleted=[];
 let pushStatus=410;
 const subscription={endpoint:'https://fcm.googleapis.com/fcm/send/test',keys:{p256dh:'A'.repeat(87),auth:'A'.repeat(22)}};
@@ -51,7 +61,7 @@ const requests=[];
 const browser=vm.createContext({URL,URLSearchParams,location:{href:'https://example.test/clinic/index.html?clinic=test'},fetch:async(url,options)=>{requests.push({url,options});return {ok:false,json:async()=>({message:'User not found'})};}});
 vm.runInContext(apiSource,browser);
 const api=new browser.ClinicAPI({supabaseUrl:'https://example.supabase.co',publishableKey:'test-public'});
-await test('Recovery hides account existence and redirects to the in-app password screen',async()=>{assert.equal(await api.resetDoctorPassword('doctor@example.test'),true);const url=new URL(requests.at(-1).url);assert.equal(url.pathname,'/auth/v1/recover');const redirect=new URL(url.searchParams.get('redirect_to'));assert.equal(redirect.pathname,'/clinic/index.html');assert.equal(redirect.searchParams.get('reset'),'1');assert.equal(redirect.searchParams.get('clinic'),'test');assert.doesNotMatch(requests.at(-1).options.body,/password/);});
+await test('Recovery hides account existence and redirects to the in-app password screen',async()=>{assert.equal(await api.resetDoctorPassword('doctor@example.test'),true);const url=new URL(requests.at(-1).url);assert.equal(url.pathname,'/auth/v1/recover');const redirect=new URL(url.searchParams.get('redirect_to'));assert.equal(redirect.pathname,'/clinic/reset-password.html');assert.equal(redirect.searchParams.get('clinic'),'test');assert.doesNotMatch(requests.at(-1).options.body,/password/);});
 await test('Password change uses the signed-in Auth user endpoint',async()=>{browser.fetch=async(url,options)=>{requests.push({url,options});return {ok:true,json:async()=>({id:'doctor'})};};api.setSession({access_token:'doctor-jwt',refresh_token:'refresh',expires_in:3600});await api.changePassword('new-test-password');assert.equal(requests.at(-1).options.method,'PUT');assert.ok(requests.at(-1).url.endsWith('/auth/v1/user'));assert.equal(requests.at(-1).options.headers.Authorization,'Bearer doctor-jwt');});
 const workerHandlers={},workerNotices=[],opened=[];
 const worker=vm.createContext({URL,self:{location:{origin:'https://example.test'},addEventListener:(name,fn)=>workerHandlers[name]=fn,registration:{showNotification:async(title,options)=>workerNotices.push({title,options})},clients:{openWindow:async url=>opened.push(url)}}});

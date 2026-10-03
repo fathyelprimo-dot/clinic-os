@@ -5,6 +5,7 @@
  const key=config.publishableKey||'';
  const $=function(selector,root){return (root||document).querySelector(selector);};
  const $$=function(selector,root){return Array.from((root||document).querySelectorAll(selector));};
+ let creating=false,creationId=null,deleting=null,deletionId=null;
  let session=null,tenants=[],requests=[],doctorRequests=[],editingClinic=null,toastTimer=null;
  const defaults=[
   {name:'كشف عادي',category:'normal',price:350,duration_minutes:20,priority:0,active:true},
@@ -23,7 +24,7 @@
   if(session.expires_at*1000<Date.now()+60000)await refreshSession();
   const response=await fetch(base+'/functions/v1/clinic-platform-admin',{method:'POST',headers:{apikey:key,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:action},payload||{}))});
   const data=await response.json().catch(function(){return null;});
-  if(!response.ok)throw Error(data&&data.error||'تعذر تنفيذ الإجراء. تحقق من صلاحية حساب المالك.');
+  if(!response.ok){const error=Error(data&&data.error||'تعذر تنفيذ الإجراء. تحقق من صلاحية حساب المالك.');Object.assign(error,{cleanup_pending:data?.cleanup_pending,retry_new:data?.retry_new});throw error;}
   return data||{};
  }
  async function sendOwnerLink(email){
@@ -74,6 +75,8 @@
   requests=Array.isArray(result[1].requests)?result[1].requests:[];
   doctorRequests=Array.isArray(result[2].requests)?result[2].requests:[];
   renderTenants();renderRequests();renderDoctorActivationRequests();renderMetrics();
+  const maintenance=await ownerAction('list-owner-operations');
+  $('#owner-maintenance').innerHTML=(maintenance.operations||[]).map(function(op){return '<p>'+esc(op.clinic_slug)+' · عملية غير مكتملة <button class="button outline" data-clean-provision="'+esc(op.id)+'">إعادة فحص وتنظيف الحساب</button></p>';}).join('')+(maintenance.receipts||[]).map(function(r){return '<p>'+esc(r.confirmation_name)+' · تنظيف الصور غير مكتمل <button class="button outline" data-clean-media="'+esc(r.id)+'">إعادة تنظيف الصور</button></p>';}).join('');
  }
  function cairoToday(){
   const parts=new Intl.DateTimeFormat('en',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
@@ -102,7 +105,7 @@
     '<div class="tenant-actions"><label class="subscription-row">نهاية الاشتراك<input type="date" value="'+esc(end)+'" data-subscription-date="'+esc(t.id)+'"></label>'+
     '<button type="button" class="button outline" data-action="save-subscription" data-id="'+esc(t.id)+'">حفظ الاشتراك</button>'+
     '<button type="button" class="button edit" data-action="edit-clinic" data-id="'+esc(t.id)+'">تعديل</button>'+
-    '<button type="button" class="button pause" data-action="toggle-active" data-id="'+esc(t.id)+'">'+(t.is_active?'إيقاف يدوي':'إعادة التفعيل')+'</button></div></article>';
+    '<button type="button" class="button pause" data-action="toggle-active" data-id="'+esc(t.id)+'">'+(t.is_active?'إيقاف يدوي':'إعادة التفعيل')+'</button><button type="button" class="button danger" data-action="delete-clinic" data-id="'+esc(t.id)+'">حذف العيادة</button></div></article>';
   }).join('');
  }
  function renderRequests(){
@@ -134,12 +137,12 @@
   }).filter(function(item){return item.name;});
  }
  function resetClinicForm(){
-  editingClinic=null;$('#clinic-form').reset();$('#clinic-form').hidden=true;$('#clinic-error').hidden=true;$('#service-rows').innerHTML='';
+  creationId=null;editingClinic=null;$('#clinic-form').reset();$('#clinic-form').hidden=true;$('#clinic-error').hidden=true;$('#service-rows').innerHTML='';
   $$('.create-only').forEach(function(el){el.hidden=false;const input=$('input',el);if(input){input.disabled=false;input.required=true;}});
   $('#clinic-form-title').textContent='عيادة جديدة';$('#form-step-number').textContent='٠١';
  }
  function showClinicForm(tenant){
-  editingClinic=tenant||null;$('#clinic-form').reset();$('#clinic-error').hidden=true;$('#clinic-form').hidden=false;
+  creationId=null;editingClinic=tenant||null;$('#clinic-form').reset();$('#clinic-error').hidden=true;$('#clinic-form').hidden=false;
   const f=$('#clinic-form').elements;
   const value=tenant||{name:'',slug:'',specialty:'',address:'',tagline:'',about:'',template:'classic',photo_url:'',accent:'#087f7b',opens:'18:00',closes:'21:00',instapay:'',wallet:'',buffer_minutes:5,latitude:'',longitude:''};
   ['name','slug','specialty','address','tagline','about','template','photo_url','accent','opens','closes','instapay','wallet','buffer_minutes','latitude','longitude'].forEach(function(k){if(f[k])f[k].value=value[k]==null?'':value[k];});
@@ -167,7 +170,7 @@
   return base+'/storage/v1/object/public/clinic-media/'+path;
  }
  async function saveClinic(event){
-  event.preventDefault();const error=$('#clinic-error');error.hidden=true;
+  event.preventDefault();if(creating)return;creating=true;const submit=event.target.querySelector('button[type=submit]');if(submit)submit.disabled=true;const error=$('#clinic-error');error.hidden=true;
   try{
    const clinic=formClinic(),services=readServices(),f=$('#clinic-form').elements;
    if(!/^[a-z0-9-]{3,80}$/.test(clinic.slug))throw Error('اكتب رابطًا من ٣ إلى ٨٠ حرفًا صغيرًا أو رقمًا أو شرطة.');
@@ -181,17 +184,18 @@
     await ownerAction('update-clinic',{clinic_id:editingClinic.id,clinic:payload,services:services});
     toast('تم حفظ إعدادات العيادة والخدمات.');
    }else{
-    let created;try{created=await ownerAction('create-tenant',{clinic:payload,services:services,initial_password:f.initial_password.value});}finally{f.initial_password.value='';}
+    let created;try{created=await ownerAction('create-tenant',{operation_id:creationId||(creationId=crypto.randomUUID()),clinic:payload,services:services,initial_password:f.initial_password.value});}finally{f.initial_password.value='';}
     const id=created.tenant&&created.tenant.id;
     if(!id)throw Error('أُنشئ الحساب لكن تعذر تأكيد رقم العيادة. حدّث القائمة قبل المحاولة مرة أخرى.');
-    await ownerAction('update-clinic',{clinic_id:id,clinic:payload,services:services});
+    // Creation saves profile and services in one database transaction.
     toast('أُنشئ حساب الدكتور بكلمة مرور أولية، والعيادة بانتظار موافقة التفعيل.');
    }
-   resetClinicForm();await loadDashboard();
-  }catch(errorValue){error.textContent=errorValue.message||'تعذر حفظ العيادة.';error.hidden=false;error.scrollIntoView({block:'nearest'});}
+   resetClinicForm();await loadDashboard().catch(function(){toast('تم الحفظ، لكن تعذر تحديث القائمة. اضغط تحديث القائمة.');});
+  }catch(errorValue){if(errorValue.retry_new)creationId=null;$('#cleanup-provision').hidden=!errorValue.cleanup_pending;error.textContent=errorValue.message||'تعذر حفظ العيادة.';error.hidden=false;error.scrollIntoView({block:'nearest'});}finally{creating=false;if(submit)submit.disabled=false;}
  }
  async function doTenantAction(button){
   const id=button.dataset.id,tenant=tenants.find(function(t){return t.id===id;});if(!tenant)return;
+  if(button.dataset.action==='delete-clinic'){deleting=tenant;deletionId=crypto.randomUUID();$('#delete-name').textContent=tenant.name+' / '+tenant.slug;$('#delete-confirmation').value='';$('#delete-submit').disabled=true;$('#delete-error').textContent='';$('#delete-dialog').showModal();return;}
   if(button.dataset.action==='edit-clinic'){showClinicForm(tenant);return;}
   if(button.dataset.action==='toggle-active'){if(!tenant.is_active&&doctorRequests.some(function(r){return r.clinic_id===id&&r.status==='pending';}))throw Error('راجع طلب تفعيل الطبيب واختر القبول أو الرفض أولًا.');
    const isActive=!tenant.is_active;
@@ -253,6 +257,19 @@
   if(!editingClinic){toast('احفظ العيادة أولًا ثم ارفع صورتها من شاشة التعديل.');event.target.value='';return;}
   run(async function(){const url=await uploadClinicPhoto(editingClinic.id,file);$('#clinic-form').elements.photo_url.value=url;toast('تم رفع الصورة. اضغط حفظ لتحديث صفحة الدكتور.');});
  });
+ $('#cleanup-provision').addEventListener('click',function(){run(async function(){const result=await ownerAction('cleanup-provision',{operation_id:creationId});creationId=null;$('#cleanup-provision').hidden=true;toast(result.cleaned?'تم تنظيف الحساب غير المكتمل. يمكنك إعادة الإنشاء.':'العيادة مكتملة؛ تم تأكيد الحالة.');await loadDashboard();});});
+ $('#owner-maintenance').addEventListener('click',function(event){const button=event.target.closest('[data-clean-provision],[data-clean-media]');if(!button)return;run(async function(){await ownerAction(button.dataset.cleanProvision?'cleanup-provision':'cleanup-clinic-media',{operation_id:button.dataset.cleanProvision||button.dataset.cleanMedia});toast('تمت إعادة فحص العملية وتنظيف البيانات غير المكتملة.');await loadDashboard();});});
+ $('#delete-cancel').addEventListener('click',function(){$('#delete-dialog').close();});
+ $('#delete-confirmation').addEventListener('input',function(){const value=this.value.trim();$('#delete-submit').disabled=!deleting||![deleting.name,deleting.slug].includes(value);});
+ $('#delete-form').addEventListener('submit',async function(event){event.preventDefault();const button=$('#delete-submit');if(button.disabled)return;button.disabled=true;$('#delete-error').textContent='';try{
+  const result=await ownerAction('delete-clinic',{clinic_id:deleting.id,confirmation:$('#delete-confirmation').value.trim(),operation_id:deletionId});
+  if(!result.deleted)throw Error('تعذر تأكيد الحذف.');
+  tenants=tenants.filter(function(t){return t.id!==deleting.id;});renderTenants();$('#delete-dialog').close();
+  toast(result.media_pending?'حُذفت بيانات العيادة. تنظيف ملفات الصور لم يكتمل؛ استخدم إعادة تنظيف الملفات.':'تم حذف العيادة وبياناتها المرتبطة.');
+  if(result.media_pending){$('#cleanup-media').hidden=false;$('#cleanup-media').dataset.operationId=deletionId;}
+  await loadDashboard().catch(function(){toast('تم الحذف، لكن تعذر تحديث القائمة.');});
+ }catch(error){$('#delete-error').textContent=error.message;}finally{button.disabled=false;}});
+ $('#cleanup-media').addEventListener('click',function(event){const button=event.currentTarget;run(async function(){const result=await ownerAction('cleanup-clinic-media',{operation_id:button.dataset.operationId});if(result.media_pending)throw Error('تعذر تنظيف ملفات الصور. حاول لاحقًا.');button.hidden=true;toast('تم تنظيف ملفات الصور.');});});
  $('#clinic-form').addEventListener('submit',saveClinic);
  $('#tenant-list').addEventListener('click',function(event){const button=event.target.closest('[data-action]');if(!button)return;run(function(){return doTenantAction(button);});});
  $('#request-list').addEventListener('click',function(event){const button=event.target.closest('[data-action=save-request]');if(button)run(function(){return doRequestAction(button);});});

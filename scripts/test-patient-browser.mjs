@@ -64,7 +64,7 @@ try{
  await page.locator('#password-form input[name=password]').fill('new-test-password');await page.locator('#password-form input[name=confirm]').fill('new-test-password');await page.locator('#password-form button').click();await page.locator('#admin').waitFor({state:'visible'});
  assert.equal(await page.locator('#password-form input[name=password]').inputValue(),'');console.log('PASS Doctor workspace opens only after password change');
  await page.screenshot({path:'.tmp/browser-checks/doctor-mobile.png',fullPage:true});
- await page.goto(server.url+'/clinic/index.html?clinic=test&portal=doctor&reset=1#access_token=recovery-test&refresh_token=test-refresh&expires_in=3600&type=recovery');await page.locator('#password-dialog').waitFor({state:'visible'});
+ await page.goto(server.url+'/clinic/index.html?clinic=test&portal=doctor&reset=1#access_token=recovery-test&refresh_token=test-refresh&expires_in=3600&type=recovery');await page.locator('#reset-form').waitFor({state:'visible'});
  assert.equal(new URL(page.url()).hash,'');console.log('PASS Recovery callback opens the in-app password screen and removes URL tokens');
  assert.deepEqual(errors,[]);
 }finally{await browser.close();await server.close();}

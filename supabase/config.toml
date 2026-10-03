@@ -1,5 +1,14 @@
 project_id = "clinic-os-local"
 
+# Local development only. Hosted Site URL / allowed redirects need manual configuration.
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/**", "http://localhost:3000/**"]
+
+[auth.email.template.recovery]
+subject = "استعادة كلمة المرور · Clinic OS"
+content_path = "./supabase/templates/recovery.html"
+
 # Public patient endpoint validates its booking capability and rate limits itself.
 [functions.patient-booking]
 verify_jwt = false
